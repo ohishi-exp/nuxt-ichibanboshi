@@ -4,8 +4,8 @@ import {
   GridComponent,
   TooltipComponent,
   LegendComponent,
-  DataZoomComponent,
   TitleComponent,
+  MarkAreaComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
@@ -16,8 +16,8 @@ use([
   GridComponent,
   TooltipComponent,
   LegendComponent,
-  DataZoomComponent,
   TitleComponent,
+  MarkAreaComponent,
   CanvasRenderer,
 ])
 

@@ -4,8 +4,8 @@ import type { CustomerSales } from '~/types'
 
 const props = defineProps<{
   data: CustomerSales[]
+  sourceTable?: string
 }>()
-
 const option = computed(() => {
   const top10 = [...props.data].slice(0, 10)
   return {
@@ -17,12 +17,12 @@ const option = computed(() => {
         return `${p.name}<br/>${val}万円 (${p.percent}%)`
       },
     },
-    legend: { orient: 'vertical', right: 10, top: 50 },
+    legend: { orient: 'vertical', right: 10, top: 'middle', type: 'scroll', textStyle: { fontSize: 11, width: 150, overflow: 'truncate' } },
     series: [
       {
         type: 'pie',
-        radius: ['30%', '60%'],
-        center: ['40%', '55%'],
+        radius: ['25%', '55%'],
+        center: ['35%', '50%'],
         data: top10.map(d => ({
           name: d.customer_name || d.customer_code,
           value: d.total_sales,
@@ -40,6 +40,7 @@ const option = computed(() => {
 
 <template>
   <div class="bg-white rounded-lg shadow p-4">
-    <VChart :option="option" style="height: 400px" autoresize />
+    <VChart :option="option" style="height: 500px" autoresize />
+    <p v-if="sourceTable" class="text-xs text-gray-400 text-right mt-1">参照: {{ sourceTable }}</p>
   </div>
 </template>

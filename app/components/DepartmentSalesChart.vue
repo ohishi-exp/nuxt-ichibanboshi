@@ -4,8 +4,8 @@ import type { DepartmentSales } from '~/types'
 
 const props = defineProps<{
   data: DepartmentSales[]
+  sourceTable?: string
 }>()
-
 const option = computed(() => {
   const sorted = [...props.data].filter(d => d.total_sales > 0).slice(0, 15)
   const names = sorted.map(d => d.department_name || d.department_code)
@@ -54,5 +54,6 @@ const option = computed(() => {
 <template>
   <div class="bg-white rounded-lg shadow p-4">
     <VChart :option="option" style="height: 400px" autoresize />
+    <p v-if="sourceTable" class="text-xs text-gray-400 text-right mt-1">参照: {{ sourceTable }}</p>
   </div>
 </template>

@@ -4,6 +4,7 @@ export interface MonthlySales {
   charter_sales: number
   total_sales: number
   transport_count: number
+  prev_year_total: number
 }
 
 export interface DepartmentSales {
@@ -22,6 +23,33 @@ export interface CustomerSales {
   charter_sales: number
   total_sales: number
   transport_count: number
+}
+
+export interface DailySales {
+  date: string
+  weekday: string
+  own_sales: number
+  charter_sales: number
+  total_sales: number
+  transport_count: number
+  prev_year_total: number
+}
+
+export interface CustomerMonthData {
+  year_month: string
+  total_sales: number
+  rank: number
+}
+
+export interface CustomerMonthly {
+  customer_code: string
+  customer_name: string
+  months: CustomerMonthData[]
+}
+
+export interface ApiResponse<T> {
+  source_table: string
+  data: T
 }
 
 export interface YoyComparison {

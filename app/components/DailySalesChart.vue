@@ -1,40 +1,58 @@
 <script setup lang="ts">
 import VChart from 'vue-echarts'
-import type { MonthlySales } from '~/types'
+import type { DailySales } from '~/types'
 
 const props = defineProps<{
-  data: MonthlySales[]
+  data: DailySales[]
+  month: string
   sourceTable?: string
 }>()
-function onChartClick(params: any) {
-  if (params.dataIndex !== undefined && props.data[params.dataIndex]) {
-    const ym = props.data[params.dataIndex].year_month
-    navigateTo(`/month/${ym}`)
-  }
-}
-
 const option = computed(() => {
-  const months = props.data.map(d => {
-    const m = d.year_month.split('-')[1]
-    return `${m}月`
+  const labels = props.data.map(d => {
+    const day = d.date.split('-')[2]
+    return `${day}(${d.weekday})`
   })
 
+  // 土日の背景色
+  const markAreas = props.data
+    .map((d, i) => {
+      if (d.weekday === '土' || d.weekday === '日') {
+        return [
+          { xAxis: i - 0.5, itemStyle: { color: d.weekday === '日' ? 'rgba(255,200,200,0.3)' : 'rgba(200,200,255,0.3)' } },
+          { xAxis: i + 0.5 },
+        ]
+      }
+      return null
+    })
+    .filter(Boolean)
+
   return {
-    title: { text: '月別売上推移（前年比較）', left: 'center' },
+    title: { text: `${props.month} 日別売上`, left: 'center' },
     tooltip: {
       trigger: 'axis',
       formatter: (params: any[]) => {
-        const m = params[0].axisValue
+        const label = params[0].axisValue
         const lines = params.map((p: any) => {
           const val = (p.value / 10000).toLocaleString('ja-JP', { maximumFractionDigits: 0 })
           return `${p.marker} ${p.seriesName}: ${val}万円`
         })
-        return `${m}<br/>${lines.join('<br/>')}`
+        return `${label}<br/>${lines.join('<br/>')}`
       },
     },
     legend: { bottom: 0 },
     grid: { left: 80, right: 30, bottom: 50, top: 50 },
-    xAxis: { type: 'category', data: months },
+    xAxis: {
+      type: 'category',
+      data: labels,
+      axisLabel: {
+        formatter: (v: string) => v,
+        color: (value: string) => {
+          if (value.includes('日)')) return '#e53e3e'
+          if (value.includes('土)')) return '#3182ce'
+          return '#333'
+        },
+      },
+    },
     yAxis: {
       type: 'value',
       axisLabel: {
@@ -47,6 +65,7 @@ const option = computed(() => {
         type: 'bar',
         data: props.data.map(d => d.prev_year_total),
         itemStyle: { color: '#d4d4d4' },
+        markArea: { silent: true, data: markAreas },
       },
       {
         name: '自車売上',
@@ -69,7 +88,7 @@ const option = computed(() => {
 
 <template>
   <div class="bg-white rounded-lg shadow p-4">
-    <VChart :option="option" style="height: 400px; cursor: pointer" autoresize @click="onChartClick" />
+    <VChart :option="option" style="height: 400px" autoresize />
     <p v-if="sourceTable" class="text-xs text-gray-400 text-right mt-1">参照: {{ sourceTable }}</p>
   </div>
 </template>

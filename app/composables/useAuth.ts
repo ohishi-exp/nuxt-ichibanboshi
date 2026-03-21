@@ -4,7 +4,12 @@ const authError = ref<string | null>(null)
 
 function parseJwt(token: string) {
   try {
-    return JSON.parse(atob(token.split('.')[1]))
+    // atob は Latin-1 でデコードするため、UTF-8 マルチバイト文字が化ける
+    // TextDecoder で正しく UTF-8 デコード
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const binary = atob(base64)
+    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0))
+    return JSON.parse(new TextDecoder().decode(bytes))
   } catch {
     return null
   }

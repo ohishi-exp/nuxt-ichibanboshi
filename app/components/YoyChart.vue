@@ -5,8 +5,8 @@ import type { YoyComparison } from '~/types'
 const props = defineProps<{
   data: YoyComparison[]
   year: number
+  sourceTable?: string
 }>()
-
 const option = computed(() => {
   const months = props.data.map(d => `${d.month}月`)
   return {
@@ -52,5 +52,6 @@ const option = computed(() => {
 <template>
   <div class="bg-white rounded-lg shadow p-4">
     <VChart :option="option" style="height: 400px" autoresize />
+    <p v-if="sourceTable" class="text-xs text-gray-400 text-right mt-1">参照: {{ sourceTable }}</p>
   </div>
 </template>
