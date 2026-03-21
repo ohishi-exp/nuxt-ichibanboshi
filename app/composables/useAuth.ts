@@ -1,5 +1,14 @@
 const accessToken = ref<string | null>(null)
 const user = ref<{ email: string; name: string } | null>(null)
+const authError = ref<string | null>(null)
+
+function parseJwt(token: string) {
+  try {
+    return JSON.parse(atob(token.split('.')[1]))
+  } catch {
+    return null
+  }
+}
 
 export function useAuth() {
   const config = useRuntimeConfig()
@@ -8,29 +17,50 @@ export function useAuth() {
     if (import.meta.server) return
     const stored = localStorage.getItem('ichibanboshi_token')
     if (stored) {
-      accessToken.value = stored
-      try {
-        const payload = JSON.parse(atob(stored.split('.')[1]))
+      const payload = parseJwt(stored)
+      if (payload) {
+        accessToken.value = stored
         user.value = { email: payload.email, name: payload.name }
-      } catch {}
+      }
     }
   }
 
-  function setTokens(token: string, refreshToken?: string) {
+  async function setTokens(token: string, refreshToken?: string): Promise<boolean> {
+    const payload = parseJwt(token)
+    if (!payload) {
+      authError.value = '無効なトークンです'
+      return false
+    }
+
+    // サーバーサイドでテナント検証
+    try {
+      await $fetch('/api/auth/validate', {
+        method: 'POST',
+        body: { token },
+      })
+    } catch (e: any) {
+      authError.value = e.data?.statusMessage || 'このアカウントではアクセスできません'
+      accessToken.value = null
+      user.value = null
+      localStorage.removeItem('ichibanboshi_token')
+      localStorage.removeItem('ichibanboshi_refresh_token')
+      return false
+    }
+
+    authError.value = null
     accessToken.value = token
     localStorage.setItem('ichibanboshi_token', token)
     if (refreshToken) {
       localStorage.setItem('ichibanboshi_refresh_token', refreshToken)
     }
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]))
-      user.value = { email: payload.email, name: payload.name }
-    } catch {}
+    user.value = { email: payload.email, name: payload.name }
+    return true
   }
 
   function logout() {
     accessToken.value = null
     user.value = null
+    authError.value = null
     localStorage.removeItem('ichibanboshi_token')
     localStorage.removeItem('ichibanboshi_refresh_token')
     navigateTo('/login')
@@ -47,14 +77,14 @@ export function useAuth() {
       })
       if (!res.ok) return false
       const data = await res.json()
-      setTokens(data.access_token, data.refresh_token)
-      return true
+      return setTokens(data.access_token, data.refresh_token)
     } catch {
       return false
     }
   }
 
   function loginWithGoogle() {
+    authError.value = null
     const redirectUri = `${window.location.origin}/auth/callback`
     const state = btoa(JSON.stringify({ redirect_uri: redirectUri }))
     const url = `${config.public.alcApiBase}/api/auth/google/redirect?redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`
@@ -66,6 +96,7 @@ export function useAuth() {
   return {
     accessToken: readonly(accessToken),
     user: readonly(user),
+    authError: readonly(authError),
     isAuthenticated,
     init,
     setTokens,
