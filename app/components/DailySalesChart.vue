@@ -7,14 +7,17 @@ const props = defineProps<{
   month: string
   sourceTable?: string
   yAxisMax?: number
+  amountMode?: 'tax_excl' | 'raw'
 }>()
+
+const isRaw = computed(() => props.amountMode === 'raw')
+
 const option = computed(() => {
   const labels = props.data.map(d => {
     const day = d.date.split('-')[2]
     return `${day}(${d.weekday})`
   })
 
-  // 土日の背景色
   const markAreas = props.data
     .map((d, i) => {
       if (d.weekday === '土' || d.weekday === '日') {
@@ -27,8 +30,10 @@ const option = computed(() => {
     })
     .filter(Boolean)
 
+  const suffix = isRaw.value ? '（金額ベース）' : '（税抜）'
+
   return {
-    title: { text: `${props.month} 日別売上`, left: 'center' },
+    title: { text: `${props.month} 日別売上${suffix}`, left: 'center' },
     tooltip: {
       trigger: 'axis',
       formatter: (params: any[]) => {
@@ -65,7 +70,7 @@ const option = computed(() => {
       {
         name: '前年',
         type: 'bar',
-        data: props.data.map(d => d.prev_year_total),
+        data: props.data.map(d => isRaw.value ? d.prev_year_total_raw : d.prev_year_total),
         itemStyle: { color: '#d4d4d4' },
         markArea: { silent: true, data: markAreas },
       },
@@ -73,14 +78,14 @@ const option = computed(() => {
         name: '自車売上',
         type: 'bar',
         stack: 'current',
-        data: props.data.map(d => d.own_sales),
+        data: props.data.map(d => isRaw.value ? d.own_sales_raw : d.own_sales),
         itemStyle: { color: '#5470c6' },
       },
       {
         name: '傭車売上',
         type: 'bar',
         stack: 'current',
-        data: props.data.map(d => d.charter_sales),
+        data: props.data.map(d => isRaw.value ? d.charter_sales_raw : d.charter_sales),
         itemStyle: { color: '#91cc75' },
       },
     ],
