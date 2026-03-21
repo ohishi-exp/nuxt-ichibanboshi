@@ -6,6 +6,7 @@ const props = defineProps<{
   data: DailySales[]
   month: string
   sourceTable?: string
+  yAxisMax?: number
 }>()
 const option = computed(() => {
   const labels = props.data.map(d => {
@@ -55,6 +56,7 @@ const option = computed(() => {
     },
     yAxis: {
       type: 'value',
+      max: props.yAxisMax || undefined,
       axisLabel: {
         formatter: (v: number) => `${(v / 10000).toLocaleString()}万`,
       },

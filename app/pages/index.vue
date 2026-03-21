@@ -108,6 +108,10 @@ async function loadData() {
         <YoyChart :data="yoyData" :year="currentYear" :source-table="yoySource" />
 
         <CustomerBumpChart :data="customerTrend" :source-table="trendSource" />
+
+        <CustomerBarRace :data="customerTrend" :source-table="trendSource" />
+
+        <CustomerStackedArea :data="customerTrend" :source-table="trendSource" />
       </div>
     </main>
   </div>

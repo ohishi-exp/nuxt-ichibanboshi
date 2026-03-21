@@ -31,8 +31,8 @@ export function useSalesData() {
     return apiFetch<CustomerMonthly[]>(`/api/sales/customer-trend?from=${from}&to=${to}&limit=${limit}`)
   }
 
-  async function fetchDailySales(month: string) {
-    return apiFetch<DailySales[]>(`/api/sales/daily?month=${month}`)
+  async function fetchDailySales(month: string, mode = 'all') {
+    return apiFetch<DailySales[]>(`/api/sales/daily?month=${month}&mode=${mode}`)
   }
 
   return {
