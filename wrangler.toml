@@ -1,0 +1,13 @@
+name = "nuxt-ichibanboshi"
+main = "./.output/server/index.mjs"
+compatibility_date = "2025-07-15"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = ".output/public"
+
+[vars]
+NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
+NUXT_PUBLIC_ALC_API_BASE = "https://alc-api.ippoan.org"
+NUXT_CF_ACCESS_CLIENT_ID = "44252f056e72590bee3c4bb8f85de841.access"
+# NUXT_CF_ACCESS_CLIENT_SECRET は wrangler secret で設定
