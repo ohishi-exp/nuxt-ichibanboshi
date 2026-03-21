@@ -28,11 +28,17 @@ export interface CustomerSales {
 export interface DailySales {
   date: string
   weekday: string
+  /** 税抜（月計テーブル一致） */
   own_sales: number
   charter_sales: number
   total_sales: number
+  /** 金額ベース（税処理混在、参考値） */
+  own_sales_raw: number
+  charter_sales_raw: number
+  total_sales_raw: number
   transport_count: number
   prev_year_total: number
+  prev_year_total_raw: number
 }
 
 export interface CustomerMonthData {
