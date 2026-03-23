@@ -9,7 +9,7 @@ const props = defineProps<{
 const option = computed(() => {
   const top10 = [...props.data].slice(0, 10)
   return {
-    title: { text: '得意先別売上 TOP10', left: 'center' },
+    title: { text: '得意先別売上 TOP10（期間合計）', left: 'center' },
     tooltip: {
       trigger: 'item',
       formatter: (p: any) => {

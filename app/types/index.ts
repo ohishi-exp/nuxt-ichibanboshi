@@ -58,6 +58,36 @@ export interface ApiResponse<T> {
   data: T
 }
 
+export interface CustomerYoy {
+  customer_code: string
+  customer_name: string
+  current_total: number
+  prev_total: number
+  diff: number
+  yoy_percent: number
+}
+
+export interface CustomerYoyResponse {
+  positive: CustomerYoy[]
+  negative: CustomerYoy[]
+  min_prev: number
+  months: number
+}
+
+export interface CustomerDetailMonth {
+  year_month: string
+  own_sales: number
+  charter_sales: number
+  total_sales: number
+  transport_count: number
+}
+
+export interface CustomerDetailResponse {
+  customer_code: string
+  customer_name: string
+  months: CustomerDetailMonth[]
+}
+
 export interface YoyComparison {
   month: string
   current_year: number

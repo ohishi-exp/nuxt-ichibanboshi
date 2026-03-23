@@ -140,7 +140,7 @@ onUnmounted(() => stop())
 <template>
   <div class="bg-white rounded-lg shadow p-4">
     <div class="flex items-center justify-between mb-2">
-      <h3 class="font-bold">得意先 売上ランキング（バーレース）</h3>
+      <h3 class="font-bold">得意先 売上ランキング（期間合計 上位15社）</h3>
       <div class="flex items-center gap-3">
         <span class="text-lg font-bold text-blue-600">{{ currentLabel }}</span>
         <button

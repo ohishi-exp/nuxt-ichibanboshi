@@ -31,7 +31,7 @@ const option = computed(() => {
   }))
 
   return {
-    title: { text: '得意先 売上構成推移（上位10社）', left: 'center' },
+    title: { text: '得意先 売上構成推移（期間合計 上位10社）', left: 'center' },
     tooltip: {
       trigger: 'axis',
       formatter: (params: any[]) => {

@@ -19,6 +19,8 @@ export default defineNuxtConfig({
     preset: 'cloudflare_module',
   },
 
+  css: ['~/assets/css/main.css'],
+
   modules: ['@nuxtjs/tailwindcss'],
 
   build: {

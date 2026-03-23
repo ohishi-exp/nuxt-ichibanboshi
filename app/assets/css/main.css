@@ -1,0 +1,69 @@
+@media print {
+  /* 背景色を印刷 */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 背景を白に */
+  body,
+  .min-h-screen {
+    background: white !important;
+  }
+
+  /* max-width 解除 */
+  .max-w-7xl {
+    max-width: none !important;
+    padding: 0 10mm !important;
+  }
+
+  /* grid を解除して縦並びに */
+  .grid {
+    display: block !important;
+  }
+
+  /* 各チャートセクションを1ページに */
+  .print-section {
+    page-break-before: always;
+    break-before: page;
+  }
+
+  /* チャート（canvas）を含むセクションはページ内に収める */
+  .print-chart {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    height: 92vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  /* テーブル系はページ跨ぎOK、改ページだけ入れる */
+  .print-table {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  /* shadow を消してインク節約 */
+  .shadow {
+    box-shadow: none !important;
+    border: 1px solid #e5e7eb !important;
+  }
+
+  /* 印刷時の改ページ */
+  .print-page-break {
+    page-break-before: always;
+    break-before: page;
+  }
+
+  /* ログアウトボタン等は非表示 */
+  .no-print {
+    display: none !important;
+  }
+
+  /* 横向き */
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+}

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { MonthlySales, DepartmentSales, CustomerSales, YoyComparison, CustomerMonthly } from '~/types'
+import type { MonthlySales, DepartmentSales, CustomerSales, YoyComparison, CustomerMonthly, CustomerYoyResponse } from '~/types'
 
 const { isAuthenticated, init, logout, user } = useAuth()
-const { fetchMonthlySales, fetchDepartmentSales, fetchCustomerSales, fetchYoy, fetchCustomerTrend } = useSalesData()
+const { fetchMonthlySales, fetchDepartmentSales, fetchCustomerSales, fetchYoy, fetchCustomerTrend, fetchCustomerYoy } = useSalesData()
 
 const loading = ref(true)
 const error = ref('')
@@ -18,6 +18,8 @@ const custSource = ref('')
 const yoySource = ref('')
 const customerTrend = ref<CustomerMonthly[]>([])
 const trendSource = ref('')
+const customerYoyData = ref<CustomerYoyResponse>({ positive: [], negative: [] })
+const customerYoySource = ref('')
 
 const currentYear = new Date().getFullYear()
 const from = ref(`${currentYear - 1}-04`)
@@ -36,12 +38,13 @@ async function loadData() {
   loading.value = true
   error.value = ''
   try {
-    const [monthly, dept, cust, yoy, trend] = await Promise.all([
+    const [monthly, dept, cust, yoy, trend, custYoy] = await Promise.all([
       fetchMonthlySales(from.value, to.value),
       fetchDepartmentSales(from.value, to.value),
       fetchCustomerSales(from.value, to.value),
       fetchYoy(currentYear),
       fetchCustomerTrend(from.value, to.value),
+      fetchCustomerYoy(from.value, to.value),
     ])
     monthlySales.value = monthly.data
     monthlySource.value = monthly.source_table
@@ -53,6 +56,8 @@ async function loadData() {
     yoySource.value = yoy.source_table
     customerTrend.value = trend.data
     trendSource.value = trend.source_table
+    customerYoyData.value = custYoy.data
+    customerYoySource.value = custYoy.source_table
   } catch (e: any) {
     error.value = e.message || '読み込みに失敗しました'
   } finally {
@@ -68,7 +73,7 @@ async function loadData() {
         <h1 class="text-xl font-bold">一番星 売上ダッシュボード</h1>
         <div class="flex items-center gap-4">
           <span v-if="user" class="text-sm text-gray-600">{{ user.name }}</span>
-          <button class="text-sm text-red-600 hover:underline" @click="logout">ログアウト</button>
+          <button class="text-sm text-red-600 hover:underline no-print" @click="logout">ログアウト</button>
         </div>
       </div>
     </header>
@@ -98,20 +103,38 @@ async function loadData() {
       </div>
 
       <div v-else class="space-y-6">
-        <MonthlySalesChart :data="monthlySales" :source-table="monthlySource" />
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <DepartmentSalesChart :data="departmentSales" :source-table="deptSource" />
-          <CustomerSalesChart :data="customerSales" :source-table="custSource" />
+        <div>
+          <MonthlySalesChart :data="monthlySales" :source-table="monthlySource" />
         </div>
 
-        <YoyChart :data="yoyData" :year="currentYear" :source-table="yoySource" />
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="print-section print-chart">
+            <DepartmentSalesChart :data="departmentSales" :source-table="deptSource" />
+          </div>
+          <div class="print-section print-chart">
+            <CustomerSalesChart :data="customerSales" :source-table="custSource" />
+          </div>
+        </div>
 
-        <CustomerBumpChart :data="customerTrend" :source-table="trendSource" />
+        <div class="print-section print-chart">
+          <YoyChart :data="yoyData" :year="currentYear" :source-table="yoySource" />
+        </div>
 
-        <CustomerBarRace :data="customerTrend" :source-table="trendSource" />
+        <div class="print-section print-table">
+          <CustomerYoyRanking :data="customerYoyData" :source-table="customerYoySource" />
+        </div>
 
-        <CustomerStackedArea :data="customerTrend" :source-table="trendSource" />
+        <div class="print-section print-chart">
+          <CustomerBumpChart :data="customerTrend" :source-table="trendSource" />
+        </div>
+
+        <div class="print-section print-chart">
+          <CustomerBarRace :data="customerTrend" :source-table="trendSource" />
+        </div>
+
+        <div class="print-section print-chart">
+          <CustomerStackedArea :data="customerTrend" :source-table="trendSource" />
+        </div>
       </div>
     </main>
   </div>

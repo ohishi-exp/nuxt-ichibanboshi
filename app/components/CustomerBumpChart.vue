@@ -74,7 +74,7 @@ const option = computed(() => {
   }
 
   return {
-    title: { text: '得意先 売上順位推移（上位15社）', left: 'center' },
+    title: { text: '得意先 売上順位推移（期間合計 上位15社）', left: 'center' },
     tooltip: {
       trigger: 'item',
       formatter: (p: any) => {

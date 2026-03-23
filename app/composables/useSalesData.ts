@@ -1,4 +1,4 @@
-import type { MonthlySales, DepartmentSales, CustomerSales, YoyComparison, DailySales, CustomerMonthly, ApiResponse } from '~/types'
+import type { MonthlySales, DepartmentSales, CustomerSales, YoyComparison, DailySales, CustomerMonthly, CustomerYoyResponse, CustomerDetailResponse, ApiResponse } from '~/types'
 
 export function useSalesData() {
   const { accessToken } = useAuth()
@@ -31,6 +31,14 @@ export function useSalesData() {
     return apiFetch<CustomerMonthly[]>(`/api/sales/customer-trend?from=${from}&to=${to}&limit=${limit}`)
   }
 
+  async function fetchCustomerDetail(code: string) {
+    return apiFetch<CustomerDetailResponse>(`/api/sales/customer-detail?code=${code}`)
+  }
+
+  async function fetchCustomerYoy(from: string, to: string, limit = 50) {
+    return apiFetch<CustomerYoyResponse>(`/api/sales/customer-yoy?from=${from}&to=${to}&limit=${limit}`)
+  }
+
   async function fetchDailySales(month: string, mode = 'all') {
     return apiFetch<DailySales[]>(`/api/sales/daily?month=${month}&mode=${mode}`)
   }
@@ -40,6 +48,8 @@ export function useSalesData() {
     fetchDepartmentSales,
     fetchCustomerSales,
     fetchYoy,
+    fetchCustomerYoy,
+    fetchCustomerDetail,
     fetchDailySales,
     fetchCustomerTrend,
   }
