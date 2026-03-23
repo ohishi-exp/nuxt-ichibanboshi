@@ -22,6 +22,8 @@ const billingModes = [
   { value: 'non_billing', label: '請求+非請求' },
 ]
 
+const excludeMiyazaki = ref(false)
+
 const amountMode = ref<'tax_excl' | 'raw'>('tax_excl')
 const amountModes = [
   { value: 'tax_excl', label: '税抜（月計一致）' },
@@ -32,10 +34,11 @@ async function loadData() {
   loading.value = true
   error.value = ''
   try {
+    const dept_param = excludeMiyazaki.value ? '宮崎' : undefined
     const [daily, billing, nonBilling, dept, cust] = await Promise.all([
-      fetchDailySales(ym, billingMode.value),
-      fetchDailySales(ym, 'billing'),
-      fetchDailySales(ym, 'non_billing'),
+      fetchDailySales(ym, billingMode.value, dept_param),
+      fetchDailySales(ym, 'billing', dept_param),
+      fetchDailySales(ym, 'non_billing', dept_param),
       fetchDepartmentSales(ym, ym),
       fetchCustomerSales(ym, ym),
     ])
@@ -66,7 +69,16 @@ async function loadData() {
 async function switchMode(mode: string) {
   billingMode.value = mode
   try {
-    const daily = await fetchDailySales(ym, mode)
+    const daily = await fetchDailySales(ym, mode, excludeMiyazaki.value ? '宮崎' : undefined)
+    dailySales.value = daily.data
+    dailySource.value = daily.source_table
+  } catch {}
+}
+
+async function toggleMiyazaki() {
+  try {
+    const dept_param = excludeMiyazaki.value ? '宮崎' : undefined
+    const daily = await fetchDailySales(ym, billingMode.value, dept_param)
     dailySales.value = daily.data
     dailySource.value = daily.source_table
   } catch {}
@@ -188,6 +200,10 @@ const displayMonth = `${year}年${parseInt(month)}月`
               </button>
             </div>
           </div>
+          <label class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto">
+            <input v-model="excludeMiyazaki" type="checkbox" class="rounded" @change="toggleMiyazaki" />
+            宮崎除く
+          </label>
           <span class="text-xs text-gray-400">Tab: 切替 / ← →: 選択</span>
         </div>
 

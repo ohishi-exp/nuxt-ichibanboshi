@@ -56,19 +56,7 @@ const option = computed(() => {
         lineStyle: { width: 14, opacity: 0.9 },
         itemStyle: { borderWidth: 3, borderColor: '#fff' },
       },
-      label: {
-        show: true,
-        position: 'right',
-        formatter: (p: any) => {
-          if (p.dataIndex === customer.months.length - 1) {
-            const sales = Math.round(customer.months[p.dataIndex].total_sales / 10000)
-            return `${formatMan(sales)}`
-          }
-          return ''
-        },
-        fontSize: 10,
-        color,
-      },
+      label: { show: false },
       z: top.length - ci, // 上位を前面に
     })
   }
@@ -88,10 +76,19 @@ const option = computed(() => {
     },
     legend: {
       type: 'scroll',
-      bottom: 0,
-      textStyle: { fontSize: 10 },
+      orient: 'vertical',
+      right: 0,
+      top: 50,
+      bottom: 20,
+      textStyle: { fontSize: 11 },
+      formatter: (name: string) => {
+        const c = top.find(t => (t.customer_name || t.customer_code) === name)
+        if (!c) return name
+        const total = c.months.reduce((s, m) => s + m.total_sales, 0)
+        return `${name}  ${formatMan(Math.round(total / 10000))}円`
+      },
     },
-    grid: { left: 50, right: 140, bottom: 70, top: 50 },
+    grid: { left: 50, right: 380, bottom: 30, top: 50 },
     xAxis: { type: 'category', data: months },
     yAxis: {
       type: 'value',

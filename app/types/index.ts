@@ -39,7 +39,11 @@ export interface DailySales {
   charter_sales_raw: number
   total_sales_raw: number
   transport_count: number
+  prev_year_own: number
+  prev_year_charter: number
   prev_year_total: number
+  prev_year_own_raw: number
+  prev_year_charter_raw: number
   prev_year_total_raw: number
 }
 

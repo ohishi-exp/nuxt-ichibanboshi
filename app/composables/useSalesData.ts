@@ -40,8 +40,9 @@ export function useSalesData() {
     return apiFetch<CustomerYoyResponse>(`/api/sales/customer-yoy?from=${from}&to=${to}&limit=${limit}`)
   }
 
-  async function fetchDailySales(month: string, mode = 'all') {
-    return apiFetch<DailySales[]>(`/api/sales/daily?month=${month}&mode=${mode}`)
+  async function fetchDailySales(month: string, mode = 'all', excludeDept?: string) {
+    const params = `month=${month}&mode=${mode}${excludeDept ? `&exclude_dept=${encodeURIComponent(excludeDept)}` : ''}`
+    return apiFetch<DailySales[]>(`/api/sales/daily?${params}`)
   }
 
   return {

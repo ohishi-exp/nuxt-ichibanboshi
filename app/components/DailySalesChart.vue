@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import VChart from 'vue-echarts'
 import type { DailySales } from '~/types'
+import holidayJp from '@holiday-jp/holiday_jp'
 
 const props = defineProps<{
   data: DailySales[]
@@ -12,23 +13,23 @@ const props = defineProps<{
 
 const isRaw = computed(() => props.amountMode === 'raw')
 
+function isHoliday(dateStr: string): string | null {
+  const d = new Date(dateStr)
+  const holidays = holidayJp.between(d, d)
+  return holidays.length > 0 ? holidays[0].name : null
+}
+
 const option = computed(() => {
   const labels = props.data.map(d => {
     const day = d.date.split('-')[2]
     return `${day}(${d.weekday})`
   })
 
-  const markAreas = props.data
-    .map((d, i) => {
-      if (d.weekday === '土' || d.weekday === '日') {
-        return [
-          { xAxis: i - 0.5, itemStyle: { color: d.weekday === '日' ? 'rgba(255,200,200,0.3)' : 'rgba(200,200,255,0.3)' } },
-          { xAxis: i + 0.5 },
-        ]
-      }
-      return null
-    })
-    .filter(Boolean)
+  // ラベル用の内部キー（祝日判定用）
+  const labelMeta = props.data.map(d => ({
+    weekday: d.weekday,
+    holiday: isHoliday(d.date),
+  }))
 
   const suffix = isRaw.value ? '（金額ベース）' : '（税抜）'
 
@@ -46,17 +47,26 @@ const option = computed(() => {
       },
     },
     legend: { bottom: 0 },
-    grid: { left: 80, right: 30, bottom: 50, top: 50 },
+    grid: { left: 80, right: 30, bottom: 60, top: 50 },
     xAxis: {
       type: 'category',
       data: labels,
       axisLabel: {
-        formatter: (v: string) => v,
-        color: (value: string) => {
-          if (value.includes('日)')) return '#e53e3e'
-          if (value.includes('土)')) return '#3182ce'
+        interval: 0,
+        formatter: (v: string) => {
+          const day = v.split('(')[0]
+          const wd = v.split('(')[1]?.replace(')', '') || ''
+          return `${day}\n${wd}`
+        },
+        color: (_: string, index: number) => {
+          const meta = labelMeta[index]
+          if (!meta) return '#333'
+          if (meta.holiday) return '#e53e3e'
+          if (meta.weekday === '日') return '#e53e3e'
+          if (meta.weekday === '土') return '#3182ce'
           return '#333'
         },
+        fontSize: 9,
       },
     },
     yAxis: {
@@ -68,11 +78,18 @@ const option = computed(() => {
     },
     series: [
       {
-        name: '前年',
+        name: '前年自車',
         type: 'bar',
-        data: props.data.map(d => isRaw.value ? d.prev_year_total_raw : d.prev_year_total),
+        stack: 'prev',
+        data: props.data.map(d => isRaw.value ? d.prev_year_own_raw : d.prev_year_own),
         itemStyle: { color: '#d4d4d4' },
-        markArea: { silent: true, data: markAreas },
+      },
+      {
+        name: '前年傭車',
+        type: 'bar',
+        stack: 'prev',
+        data: props.data.map(d => isRaw.value ? d.prev_year_charter_raw : d.prev_year_charter),
+        itemStyle: { color: '#bfbfbf' },
       },
       {
         name: '自車売上',
