@@ -11,8 +11,9 @@ export function useSalesData() {
     })
   }
 
-  async function fetchMonthlySales(from: string, to: string) {
-    return apiFetch<MonthlySales[]>(`/api/sales/monthly?from=${from}&to=${to}`)
+  async function fetchMonthlySales(from: string, to: string, excludeDept?: string) {
+    const params = `from=${from}&to=${to}${excludeDept ? `&exclude_dept=${encodeURIComponent(excludeDept)}` : ''}`
+    return apiFetch<MonthlySales[]>(`/api/sales/monthly?${params}`)
   }
 
   async function fetchDepartmentSales(from: string, to: string) {

@@ -8,6 +8,7 @@ const loading = ref(true)
 const error = ref('')
 
 const monthlySales = ref<MonthlySales[]>([])
+const monthlyYMax = ref(0)
 const departmentSales = ref<DepartmentSales[]>([])
 const customerSales = ref<CustomerSales[]>([])
 const yoyData = ref<YoyComparison[]>([])
@@ -24,6 +25,7 @@ const customerYoySource = ref('')
 const currentYear = new Date().getFullYear()
 const from = ref(`${currentYear - 1}-04`)
 const to = ref(`${currentYear}-03`)
+const excludeMiyazaki = ref(false)
 
 onMounted(async () => {
   init()
@@ -39,7 +41,7 @@ async function loadData() {
   error.value = ''
   try {
     const [monthly, dept, cust, yoy, trend, custYoy] = await Promise.all([
-      fetchMonthlySales(from.value, to.value),
+      fetchMonthlySales(from.value, to.value, excludeMiyazaki.value ? '宮崎' : undefined),
       fetchDepartmentSales(from.value, to.value),
       fetchCustomerSales(from.value, to.value),
       fetchYoy(currentYear),
@@ -48,6 +50,7 @@ async function loadData() {
     ])
     monthlySales.value = monthly.data
     monthlySource.value = monthly.source_table
+    monthlyYMax.value = Math.max(...monthly.data.map(d => Math.max(d.total_sales, d.prev_year_total)))
     departmentSales.value = dept.data
     deptSource.value = dept.source_table
     customerSales.value = cust.data
@@ -63,6 +66,14 @@ async function loadData() {
   } finally {
     loading.value = false
   }
+}
+
+async function reloadMonthly() {
+  try {
+    const monthly = await fetchMonthlySales(from.value, to.value, excludeMiyazaki.value ? '宮崎' : undefined)
+    monthlySales.value = monthly.data
+    monthlySource.value = monthly.source_table
+  } catch {}
 }
 </script>
 
@@ -104,7 +115,13 @@ async function loadData() {
 
       <div v-else class="space-y-6">
         <div>
-          <MonthlySalesChart :data="monthlySales" :source-table="monthlySource" />
+          <div class="flex justify-end mb-1">
+            <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input v-model="excludeMiyazaki" type="checkbox" class="rounded" @change="reloadMonthly" />
+              宮崎除く
+            </label>
+          </div>
+          <MonthlySalesChart :data="monthlySales" :source-table="monthlySource" :y-max="monthlyYMax" />
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">

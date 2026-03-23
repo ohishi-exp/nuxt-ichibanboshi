@@ -5,6 +5,7 @@ import type { MonthlySales } from '~/types'
 const props = defineProps<{
   data: MonthlySales[]
   sourceTable?: string
+  yMax?: number
 }>()
 function onChartClick(params: any) {
   if (params.dataIndex !== undefined && props.data[params.dataIndex]) {
@@ -37,16 +38,25 @@ const option = computed(() => {
     xAxis: { type: 'category', data: months },
     yAxis: {
       type: 'value',
+      max: props.yMax || undefined,
       axisLabel: {
         formatter: (v: number) => `${(v / 10000).toLocaleString()}万`,
       },
     },
     series: [
       {
-        name: '前年',
+        name: '前年自車',
         type: 'bar',
-        data: props.data.map(d => d.prev_year_total),
+        stack: 'prev',
+        data: props.data.map(d => d.prev_year_own),
         itemStyle: { color: '#d4d4d4' },
+      },
+      {
+        name: '前年傭車',
+        type: 'bar',
+        stack: 'prev',
+        data: props.data.map(d => d.prev_year_charter),
+        itemStyle: { color: '#bfbfbf' },
       },
       {
         name: '自車売上',

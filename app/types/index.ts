@@ -4,6 +4,8 @@ export interface MonthlySales {
   charter_sales: number
   total_sales: number
   transport_count: number
+  prev_year_own: number
+  prev_year_charter: number
   prev_year_total: number
 }
 
