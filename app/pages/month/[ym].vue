@@ -26,8 +26,8 @@ const excludeMiyazaki = ref(false)
 
 const amountMode = ref<'tax_excl' | 'raw'>('tax_excl')
 const amountModes = [
-  { value: 'tax_excl', label: '税抜（月計一致）' },
-  { value: 'raw', label: '金額ベース' },
+  { value: 'tax_excl' as const, label: '税抜（月計一致）' },
+  { value: 'raw' as const, label: '金額ベース' },
 ]
 
 async function loadData() {

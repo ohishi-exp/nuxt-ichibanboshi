@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import VChart from 'vue-echarts'
+import type { ECBasicOption } from 'echarts/types/dist/shared'
 import type { CustomerMonthly } from '~/types'
 
 const props = defineProps<{
@@ -49,8 +50,8 @@ function getMonthData(monthIdx: number) {
     .slice(0, 15)
 }
 
-const option = computed(() => {
-  if (!props.data.length || !months.value.length) return {}
+const option = computed((): ECBasicOption | undefined => {
+  if (!props.data.length || !months.value.length) return undefined
 
   const monthData = getMonthData(currentMonthIdx.value)
 
