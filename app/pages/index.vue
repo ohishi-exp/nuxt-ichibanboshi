@@ -19,7 +19,7 @@ const custSource = ref('')
 const yoySource = ref('')
 const customerTrend = ref<CustomerMonthly[]>([])
 const trendSource = ref('')
-const customerYoyData = ref<CustomerYoyResponse>({ positive: [], negative: [] })
+const customerYoyData = ref<CustomerYoyResponse>({ positive: [], negative: [], min_prev: 0, months: 0 })
 const customerYoySource = ref('')
 
 const currentYear = new Date().getFullYear()
