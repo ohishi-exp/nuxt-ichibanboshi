@@ -17,5 +17,5 @@ NUXT_CF_ACCESS_CLIENT_ID = "44252f056e72590bee3c4bb8f85de841.access"
 name = "nuxt-ichibanboshi-staging"
 [env.staging.vars]
 NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
-NUXT_PUBLIC_ALC_API_BASE = "STAGING_API_URL"
+NUXT_PUBLIC_ALC_API_BASE = "https://rust-alc-api-staging-566bls5vfq-an.a.run.app"
 NUXT_CF_ACCESS_CLIENT_ID = "44252f056e72590bee3c4bb8f85de841.access"
