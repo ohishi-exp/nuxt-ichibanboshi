@@ -13,5 +13,6 @@ jobs:
   ci:
     uses: ippoan/ci-workflows/.github/workflows/frontend-ci.yml@main
     with:
+      has_tests: false
       post_install_script: 'npx nuxt prepare'
     secrets: inherit
