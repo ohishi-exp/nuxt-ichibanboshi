@@ -11,3 +11,10 @@ NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
 NUXT_PUBLIC_ALC_API_BASE = "https://alc-api.ippoan.org"
 NUXT_CF_ACCESS_CLIENT_ID = "44252f056e72590bee3c4bb8f85de841.access"
 # NUXT_CF_ACCESS_CLIENT_SECRET は wrangler secret で設定
+
+[env.staging]
+name = "nuxt-ichibanboshi-staging"
+[env.staging.vars]
+NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
+NUXT_PUBLIC_ALC_API_BASE = "STAGING_API_URL"
+NUXT_CF_ACCESS_CLIENT_ID = "44252f056e72590bee3c4bb8f85de841.access"
