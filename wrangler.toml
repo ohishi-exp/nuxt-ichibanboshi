@@ -1,4 +1,5 @@
 name = "nuxt-ichibanboshi"
+account_id = "24b45709d060d957340180e995f0d373"
 main = "./.output/server/index.mjs"
 compatibility_date = "2025-07-15"
 compatibility_flags = ["nodejs_compat"]
