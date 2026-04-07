@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  packages: read
   pull-requests: write
 
 jobs:
@@ -16,6 +17,7 @@ jobs:
     uses: ippoan/ci-workflows/.github/workflows/frontend-ci.yml@main
     with:
       has_tests: false
+      use_auth_client_dev: true
       post_install_script: 'npx nuxt prepare'
     secrets:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
