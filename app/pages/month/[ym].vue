@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { DailySales, DepartmentSales, CustomerSales } from '~/types'
+import { AuthToolbar } from '~/composables/useAuth'
 
 const route = useRoute()
 const ym = route.params.ym as string
-const { isAuthenticated, init, logout, user } = useAuth()
 const { fetchDailySales, fetchDepartmentSales, fetchCustomerSales } = useSalesData()
 
 const loading = ref(true)
@@ -116,11 +116,6 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
-  init()
-  if (!isAuthenticated.value) {
-    navigateTo('/login')
-    return
-  }
   await loadData()
 })
 
@@ -142,10 +137,7 @@ const displayMonth = `${year}年${parseInt(month)}月`
           </button>
           <h1 class="text-xl font-bold">{{ displayMonth }} 売上詳細</h1>
         </div>
-        <div class="flex items-center gap-4">
-          <span v-if="user" class="text-sm text-gray-600">{{ user.name }}</span>
-          <button class="text-sm text-red-600 hover:underline" @click="logout">ログアウト</button>
-        </div>
+        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
       </div>
     </header>
 

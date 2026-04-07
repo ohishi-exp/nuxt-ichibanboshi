@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import VChart from 'vue-echarts'
 import type { CustomerYoyResponse, CustomerDetailResponse, CustomerYoy } from '~/types'
+import { AuthToolbar } from '~/composables/useAuth'
 
-const { isAuthenticated, init, logout, user } = useAuth()
 const { fetchCustomerYoy, fetchCustomerDetail } = useSalesData()
 
 const loading = ref(true)
@@ -23,11 +23,6 @@ const detailLoading = ref(false)
 const detail = ref<CustomerDetailResponse | null>(null)
 
 onMounted(async () => {
-  init()
-  if (!isAuthenticated.value) {
-    navigateTo('/login')
-    return
-  }
   await loadData()
 })
 
@@ -170,10 +165,7 @@ const lineOption = computed(() => {
           </button>
           <h1 class="text-xl font-bold">得意先 前年同期比ランキング</h1>
         </div>
-        <div class="flex items-center gap-4">
-          <span v-if="user" class="text-sm text-gray-600">{{ user.name }}</span>
-          <button class="text-sm text-red-600 hover:underline" @click="logout">ログアウト</button>
-        </div>
+        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
       </div>
     </header>
 

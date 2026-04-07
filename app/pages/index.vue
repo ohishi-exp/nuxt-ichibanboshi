@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { MonthlySales, DepartmentSales, CustomerSales, YoyComparison, CustomerMonthly, CustomerYoyResponse } from '~/types'
+import { AuthToolbar } from '~/composables/useAuth'
 
-const { isAuthenticated, init, logout, user } = useAuth()
 const { fetchMonthlySales, fetchDepartmentSales, fetchCustomerSales, fetchYoy, fetchCustomerTrend, fetchCustomerYoy } = useSalesData()
 
 const loading = ref(true)
@@ -28,11 +28,6 @@ const to = ref(`${currentYear}-03`)
 const excludeMiyazaki = ref(false)
 
 onMounted(async () => {
-  init()
-  if (!isAuthenticated.value) {
-    navigateTo('/login')
-    return
-  }
   await loadData()
 })
 
@@ -82,10 +77,7 @@ async function reloadMonthly() {
     <header class="bg-white shadow">
       <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
         <h1 class="text-xl font-bold">一番星 売上ダッシュボード</h1>
-        <div class="flex items-center gap-4">
-          <span v-if="user" class="text-sm text-gray-600">{{ user.name }}</span>
-          <button class="text-sm text-red-600 hover:underline no-print" @click="logout">ログアウト</button>
-        </div>
+        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
       </div>
     </header>
 
