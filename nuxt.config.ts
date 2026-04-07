@@ -11,6 +11,8 @@ export default defineNuxtConfig({
     allowedTenantId: process.env.NUXT_ALLOWED_TENANT_ID || '',
     public: {
       alcApiBase: process.env.NUXT_PUBLIC_ALC_API_BASE || 'http://localhost:8080',
+      authWorkerUrl: process.env.NUXT_PUBLIC_AUTH_WORKER_URL || '',
+      apiBackend: 'rust-alc-api',
       googleClientId: process.env.NUXT_PUBLIC_GOOGLE_CLIENT_ID || '',
     },
   },
@@ -24,6 +26,6 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/tailwindcss'],
 
   build: {
-    transpile: ['echarts', 'vue-echarts', 'resize-detector'],
+    transpile: ['echarts', 'vue-echarts', 'resize-detector', '@ippoan/auth-client'],
   },
 })

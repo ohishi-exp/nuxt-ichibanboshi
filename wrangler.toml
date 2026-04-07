@@ -14,6 +14,7 @@ custom_domain = true
 [vars]
 NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
 NUXT_PUBLIC_ALC_API_BASE = "https://alc-api.ippoan.org"
+NUXT_PUBLIC_AUTH_WORKER_URL = "https://auth.ippoan.org"
 NUXT_CF_ACCESS_CLIENT_ID = "44252f056e72590bee3c4bb8f85de841.access"
 # NUXT_CF_ACCESS_CLIENT_SECRET は wrangler secret で設定
 

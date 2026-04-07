@@ -1,12 +1,12 @@
 import type { MonthlySales, DepartmentSales, CustomerSales, YoyComparison, DailySales, CustomerMonthly, CustomerYoyResponse, CustomerDetailResponse, ApiResponse } from '~/types'
 
 export function useSalesData() {
-  const { accessToken } = useAuth()
+  const { token } = useAuth()
 
   async function apiFetch<T>(path: string): Promise<ApiResponse<T>> {
     return await $fetch<ApiResponse<T>>(path, {
       headers: {
-        ...(accessToken.value ? { Authorization: `Bearer ${accessToken.value}` } : {}),
+        ...(token.value ? { Authorization: `Bearer ${token.value}` } : {}),
       },
     })
   }
