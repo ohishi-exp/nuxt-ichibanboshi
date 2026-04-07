@@ -7,6 +7,10 @@ compatibility_flags = ["nodejs_compat"]
 [assets]
 directory = ".output/public"
 
+[[routes]]
+pattern = "ichibanboshi.ippoan.org"
+custom_domain = true
+
 [vars]
 NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
 NUXT_PUBLIC_ALC_API_BASE = "https://alc-api.ippoan.org"
