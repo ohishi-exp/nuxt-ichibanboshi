@@ -70,3 +70,26 @@ export function resolveAuthAction(config: AuthConfig, req: AuthRequest): AuthAct
     redirectUrl: `${config.authWorkerUrl}/login?redirect_uri=${encodeURIComponent(redirectUri)}`,
   }
 }
+
+export type TenantCheckResult =
+  | { type: 'pass' }
+  | { type: 'forbidden'; reason: string }
+
+export function checkTenantId(
+  cookie: string | undefined,
+  allowedTenantId: string,
+): TenantCheckResult {
+  if (!allowedTenantId) return { type: 'pass' }
+  if (!cookie) return { type: 'pass' }
+  try {
+    const payloadPart = cookie.split('.')[1]
+    if (!payloadPart) return { type: 'forbidden', reason: 'invalid token' }
+    const payload = JSON.parse(atob(payloadPart))
+    if (payload.tenant_id !== allowedTenantId) {
+      return { type: 'forbidden', reason: 'tenant_id mismatch' }
+    }
+    return { type: 'pass' }
+  } catch {
+    return { type: 'forbidden', reason: 'invalid token' }
+  }
+}

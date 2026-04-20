@@ -5,12 +5,21 @@
  * HTML 描画前にリダイレクトするため、未認証時にページが一瞬見えるのを防ぐ。
  */
 
-import { resolveAuthAction } from '../utils/auth-logic'
+import { checkTenantId, resolveAuthAction } from '../utils/auth-logic'
 
 export default defineEventHandler((event) => {
   const config = useRuntimeConfig()
 
   const url = getRequestURL(event)
+  const cookie = getCookie(event, 'logi_auth_token')
+
+  const tenantCheck = checkTenantId(cookie, config.allowedTenantId as string)
+  if (tenantCheck.type === 'forbidden') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'このアカウントではアクセスできません',
+    })
+  }
 
   const action = resolveAuthAction(
     {
@@ -22,7 +31,7 @@ export default defineEventHandler((event) => {
       origin: url.origin,
       hostname: url.hostname,
       searchParams: url.searchParams,
-      cookie: getCookie(event, 'logi_auth_token'),
+      cookie,
       lwDomainCookie: getCookie(event, 'lw_domain'),
     },
   )
