@@ -29,7 +29,11 @@ export default defineEventHandler((event) => {
 
     const authWorkerUrl = config.public.authWorkerUrl as string
     if (authWorkerUrl) {
-      const loginUrl = `${authWorkerUrl}/login?error=tenant_mismatch`
+      const loginParams = new URLSearchParams({
+        redirect_uri: `${authWorkerUrl}/top`,
+        error: 'このアカウントは一番星にアクセスできません',
+      })
+      const loginUrl = `${authWorkerUrl}/login?${loginParams.toString()}`
       const logoutUrl = `${authWorkerUrl}/logout?redirect_uri=${encodeURIComponent(loginUrl)}`
       return sendRedirect(event, logoutUrl)
     }
