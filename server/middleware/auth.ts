@@ -5,7 +5,7 @@
  * HTML 描画前にリダイレクトするため、未認証時にページが一瞬見えるのを防ぐ。
  */
 
-import { checkTenantId, resolveAuthAction } from '../utils/auth-logic'
+import { checkTenantId, getParentDomainFromHost, resolveAuthAction } from '../utils/auth-logic'
 
 export default defineEventHandler((event) => {
   const config = useRuntimeConfig()
@@ -13,8 +13,26 @@ export default defineEventHandler((event) => {
   const url = getRequestURL(event)
   const cookie = getCookie(event, 'logi_auth_token')
 
+  const cookieOpts = (domain: string | undefined) => ({
+    domain,
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60,
+    secure: true,
+    sameSite: 'lax' as const,
+  })
+
   const tenantCheck = checkTenantId(cookie, config.allowedTenantId as string)
   if (tenantCheck.type === 'forbidden') {
+    const domain = getParentDomainFromHost(url.hostname)
+    setCookie(event, 'logi_auth_token', '', { ...cookieOpts(domain), maxAge: 0 })
+    setCookie(event, 'lw_domain', '', { ...cookieOpts(domain), maxAge: 0 })
+
+    const authWorkerUrl = config.public.authWorkerUrl as string
+    if (authWorkerUrl) {
+      const loginUrl = `${authWorkerUrl}/login?error=tenant_mismatch`
+      const logoutUrl = `${authWorkerUrl}/logout?redirect_uri=${encodeURIComponent(loginUrl)}`
+      return sendRedirect(event, logoutUrl)
+    }
     throw createError({
       statusCode: 403,
       statusMessage: 'このアカウントではアクセスできません',
@@ -35,14 +53,6 @@ export default defineEventHandler((event) => {
       lwDomainCookie: getCookie(event, 'lw_domain'),
     },
   )
-
-  const cookieOpts = (domain: string | undefined) => ({
-    domain,
-    path: '/',
-    maxAge: 30 * 24 * 60 * 60,
-    secure: true,
-    sameSite: 'lax' as const,
-  })
 
   switch (action.type) {
     case 'pass':
