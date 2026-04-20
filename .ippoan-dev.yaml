@@ -1,0 +1,5 @@
+# dev-proxy metadata. Must mirror the entry for ippoan/nuxt-ichibanboshi in
+# ippoan/dev-proxy/registry.json. Mismatches fail ci/Dev Proxy Validate.
+name: nuxt-ichibanboshi
+port: 3015
+cmd: "PORT=$PORT HOST=0.0.0.0 npm run dev"
