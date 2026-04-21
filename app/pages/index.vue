@@ -27,8 +27,56 @@ const from = ref(`${currentYear - 1}-04`)
 const to = ref(`${currentYear}-03`)
 const excludeMiyazaki = ref(false)
 
+// Top N 得意先 (期間指定)
+const currentMonth = `${currentYear}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+const topFrom = ref(currentMonth)
+const topTo = ref(currentMonth)
+const topLimit = ref(10)
+const topLoading = ref(false)
+const topError = ref('')
+const topTrend = ref<CustomerMonthly[]>([])
+const topSource = ref('')
+
+const topRanking = computed(() => {
+  const totals = topTrend.value.map((c) => {
+    const total = c.months.reduce((sum, m) => sum + (m.total_sales || 0), 0)
+    return {
+      customer_code: c.customer_code,
+      customer_name: c.customer_name,
+      total,
+    }
+  })
+  const grandTotal = totals.reduce((sum, t) => sum + t.total, 0)
+  return totals
+    .sort((a, b) => b.total - a.total)
+    .slice(0, topLimit.value)
+    .map((t, idx) => ({
+      rank: idx + 1,
+      customer_code: t.customer_code,
+      customer_name: t.customer_name,
+      total: t.total,
+      share: grandTotal > 0 ? (t.total / grandTotal) * 100 : 0,
+    }))
+})
+
+async function loadTopRanking() {
+  topLoading.value = true
+  topError.value = ''
+  try {
+    // customer-trend は limit=N で上位 N 社のみ返すので、構成比の母数を広く取るため多めに取得
+    const fetchLimit = Math.max(topLimit.value, 50)
+    const res = await fetchCustomerTrend(topFrom.value, topTo.value, fetchLimit)
+    topTrend.value = res.data
+    topSource.value = res.source_table
+  } catch (e: any) {
+    topError.value = e.message || '読み込みに失敗しました'
+  } finally {
+    topLoading.value = false
+  }
+}
+
 onMounted(async () => {
-  await loadData()
+  await Promise.all([loadData(), loadTopRanking()])
 })
 
 async function loadData() {
@@ -132,6 +180,68 @@ async function reloadMonthly() {
         <div class="print-section print-table">
           <CustomerYoyRanking :data="customerYoyData" :source-table="customerYoySource" />
         </div>
+
+        <section class="bg-white rounded-lg shadow p-4 print-section print-table">
+          <div class="flex flex-wrap items-center gap-3 mb-3">
+            <h2 class="text-lg font-bold mr-2">期間売上 Top 得意先</h2>
+            <label class="text-sm font-medium">期間:</label>
+            <input v-model="topFrom" type="month" class="border rounded px-2 py-1 text-sm" />
+            <span>〜</span>
+            <input v-model="topTo" type="month" class="border rounded px-2 py-1 text-sm" />
+            <label class="text-sm font-medium ml-2">上位:</label>
+            <select v-model.number="topLimit" class="border rounded px-2 py-1 text-sm">
+              <option :value="5">5</option>
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+              <option :value="50">50</option>
+            </select>
+            <button
+              class="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700"
+              :disabled="topLoading"
+              @click="loadTopRanking"
+            >
+              更新
+            </button>
+            <span v-if="topSource" class="text-xs text-gray-500 ml-auto">source: {{ topSource }}</span>
+          </div>
+
+          <div v-if="topLoading" class="text-center py-8 text-gray-500 text-sm">読み込み中...</div>
+          <div v-else-if="topError" class="text-center py-8">
+            <p class="text-red-600 text-sm">{{ topError }}</p>
+            <button class="mt-2 bg-blue-600 text-white px-4 py-1 rounded text-sm" @click="loadTopRanking">
+              再試行
+            </button>
+          </div>
+          <div v-else-if="topRanking.length === 0" class="text-center py-8 text-gray-500 text-sm">
+            データがありません
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="bg-gray-50 border-b">
+                  <th class="text-left px-3 py-2 w-12">順位</th>
+                  <th class="text-left px-3 py-2">得意先名</th>
+                  <th class="text-right px-3 py-2">期間合計 (万円)</th>
+                  <th class="text-right px-3 py-2 w-24">構成比 %</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in topRanking"
+                  :key="row.customer_code"
+                  class="border-b hover:bg-gray-50"
+                >
+                  <td class="px-3 py-2">{{ row.rank }}</td>
+                  <td class="px-3 py-2">{{ row.customer_name }}</td>
+                  <td class="px-3 py-2 text-right font-mono">
+                    {{ Math.round(row.total / 10000).toLocaleString() }}
+                  </td>
+                  <td class="px-3 py-2 text-right font-mono">{{ row.share.toFixed(1) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <div class="print-section print-chart">
           <CustomerBumpChart :data="customerTrend" :source-table="trendSource" />
