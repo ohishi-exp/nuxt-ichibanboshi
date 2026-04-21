@@ -22,6 +22,42 @@ const selected = ref<CustomerYoy | null>(null)
 const detailLoading = ref(false)
 const detail = ref<CustomerDetailResponse | null>(null)
 
+// ソート状態（プラス・マイナス独立）
+type SortKey = 'customer_name' | 'current_total' | 'prev_total' | 'yoy_percent'
+type SortOrder = 'asc' | 'desc'
+interface SortState { key: SortKey; order: SortOrder }
+const positiveSort = ref<SortState>({ key: 'prev_total', order: 'desc' })
+const negativeSort = ref<SortState>({ key: 'yoy_percent', order: 'asc' })
+
+function compareYoy(a: CustomerYoy, b: CustomerYoy, key: SortKey, order: SortOrder): number {
+  const mul = order === 'asc' ? 1 : -1
+  if (key === 'customer_name') return a.customer_name.localeCompare(b.customer_name, 'ja') * mul
+  return (((a[key] as number) ?? 0) - ((b[key] as number) ?? 0)) * mul
+}
+
+const sortedPositive = computed(() => {
+  const { key, order } = positiveSort.value
+  return [...yoyData.value.positive].sort((a, b) => compareYoy(a, b, key, order))
+})
+const sortedNegative = computed(() => {
+  const { key, order } = negativeSort.value
+  return [...yoyData.value.negative].sort((a, b) => compareYoy(a, b, key, order))
+})
+
+function toggleSort(which: 'positive' | 'negative', key: SortKey) {
+  const stateRef = which === 'positive' ? positiveSort : negativeSort
+  if (stateRef.value.key === key) {
+    stateRef.value = { key, order: stateRef.value.order === 'asc' ? 'desc' : 'asc' }
+  } else {
+    stateRef.value = { key, order: key === 'customer_name' ? 'asc' : 'desc' }
+  }
+}
+
+function sortIcon(state: SortState, key: SortKey): string {
+  if (state.key !== key) return '⇅'
+  return state.order === 'asc' ? '▲' : '▼'
+}
+
 onMounted(async () => {
   await loadData()
 })
@@ -207,15 +243,31 @@ const lineOption = computed(() => {
                 <thead class="sticky top-0 bg-white">
                   <tr class="border-b text-gray-500">
                     <th class="text-left py-1 w-6">#</th>
-                    <th class="text-left py-1">得意先</th>
-                    <th class="text-right py-1">前年</th>
-                    <th class="text-right py-1">今期</th>
-                    <th class="text-right py-1">YoY%</th>
+                    <th class="text-left py-1">
+                      <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('positive', 'customer_name')">
+                        得意先<span class="text-[10px]">{{ sortIcon(positiveSort, 'customer_name') }}</span>
+                      </button>
+                    </th>
+                    <th class="text-right py-1">
+                      <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('positive', 'prev_total')">
+                        前年<span class="text-[10px]">{{ sortIcon(positiveSort, 'prev_total') }}</span>
+                      </button>
+                    </th>
+                    <th class="text-right py-1">
+                      <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('positive', 'current_total')">
+                        今期<span class="text-[10px]">{{ sortIcon(positiveSort, 'current_total') }}</span>
+                      </button>
+                    </th>
+                    <th class="text-right py-1">
+                      <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('positive', 'yoy_percent')">
+                        YoY%<span class="text-[10px]">{{ sortIcon(positiveSort, 'yoy_percent') }}</span>
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr
-                    v-for="(item, i) in yoyData.positive" :key="item.customer_code"
+                    v-for="(item, i) in sortedPositive" :key="item.customer_code"
                     class="border-b border-gray-100 hover:bg-blue-50 cursor-pointer"
                     :class="{ 'bg-blue-100': selected?.customer_code === item.customer_code }"
                     @click="selectCustomer(item)"
@@ -241,15 +293,31 @@ const lineOption = computed(() => {
                 <thead class="sticky top-0 bg-white">
                   <tr class="border-b text-gray-500">
                     <th class="text-left py-1 w-6">#</th>
-                    <th class="text-left py-1">得意先</th>
-                    <th class="text-right py-1">前年</th>
-                    <th class="text-right py-1">今期</th>
-                    <th class="text-right py-1">YoY%</th>
+                    <th class="text-left py-1">
+                      <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('negative', 'customer_name')">
+                        得意先<span class="text-[10px]">{{ sortIcon(negativeSort, 'customer_name') }}</span>
+                      </button>
+                    </th>
+                    <th class="text-right py-1">
+                      <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('negative', 'prev_total')">
+                        前年<span class="text-[10px]">{{ sortIcon(negativeSort, 'prev_total') }}</span>
+                      </button>
+                    </th>
+                    <th class="text-right py-1">
+                      <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('negative', 'current_total')">
+                        今期<span class="text-[10px]">{{ sortIcon(negativeSort, 'current_total') }}</span>
+                      </button>
+                    </th>
+                    <th class="text-right py-1">
+                      <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('negative', 'yoy_percent')">
+                        YoY%<span class="text-[10px]">{{ sortIcon(negativeSort, 'yoy_percent') }}</span>
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr
-                    v-for="(item, i) in yoyData.negative" :key="item.customer_code"
+                    v-for="(item, i) in sortedNegative" :key="item.customer_code"
                     class="border-b border-gray-100 hover:bg-blue-50 cursor-pointer"
                     :class="{ 'bg-blue-100': selected?.customer_code === item.customer_code }"
                     @click="selectCustomer(item)"
