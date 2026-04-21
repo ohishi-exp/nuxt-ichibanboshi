@@ -80,6 +80,31 @@ export interface CustomerYoyResponse {
   months: number
 }
 
+export interface DepartmentOption {
+  department_code: string
+  department_name: string
+}
+
+export interface CustomerYoyWithDept {
+  department_code: string
+  department_name: string
+  customer_code: string
+  customer_name: string
+  current_total: number
+  prev_total: number
+  diff: number
+  yoy_percent: number
+}
+
+export interface CustomerYoyByDeptResponse {
+  positive: CustomerYoyWithDept[]
+  negative: CustomerYoyWithDept[]
+  months: number
+  min_prev: number
+  departments: DepartmentOption[]
+  department_code?: string
+}
+
 export interface CustomerDetailMonth {
   year_month: string
   own_sales: number

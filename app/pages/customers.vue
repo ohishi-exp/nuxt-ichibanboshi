@@ -1,24 +1,35 @@
 <script setup lang="ts">
 import VChart from 'vue-echarts'
-import type { CustomerYoyResponse, CustomerDetailResponse, CustomerYoy } from '~/types'
+import type { CustomerDetailResponse, CustomerYoyWithDept, DepartmentOption } from '~/types'
 import { AuthToolbar } from '~/composables/useAuth'
 
-const { fetchCustomerYoy, fetchCustomerDetail } = useSalesData()
+const { fetchCustomerYoy, fetchCustomerYoyByDept, fetchCustomerDetail, fetchDepartments } = useSalesData()
 
 const loading = ref(true)
 const error = ref('')
-const yoyData = ref<CustomerYoyResponse>({ positive: [], negative: [], min_prev: 0, months: 0 })
+// CustomerYoy と CustomerYoyWithDept の統一バケット（全社時は dept フィールドを空文字で埋める）
+interface YoyBucket {
+  positive: CustomerYoyWithDept[]
+  negative: CustomerYoyWithDept[]
+  min_prev: number
+  months: number
+}
+const yoyData = ref<YoyBucket>({ positive: [], negative: [], min_prev: 0, months: 0 })
 const yoySource = ref('')
 
 const currentYear = new Date().getFullYear()
 const from = ref(`${currentYear - 1}-04`)
 const to = ref(`${currentYear}-03`)
 
+// 営業所
+const selectedDept = ref('')
+const departments = ref<DepartmentOption[]>([])
+
 // 増加TOP 表示切替
 const showPositive = ref(true)
 
 // 選択中の得意先
-const selected = ref<CustomerYoy | null>(null)
+const selected = ref<CustomerYoyWithDept | null>(null)
 const detailLoading = ref(false)
 const detail = ref<CustomerDetailResponse | null>(null)
 
@@ -29,7 +40,7 @@ interface SortState { key: SortKey; order: SortOrder }
 const positiveSort = ref<SortState>({ key: 'prev_total', order: 'desc' })
 const negativeSort = ref<SortState>({ key: 'yoy_percent', order: 'asc' })
 
-function compareYoy(a: CustomerYoy, b: CustomerYoy, key: SortKey, order: SortOrder): number {
+function compareYoy(a: CustomerYoyWithDept, b: CustomerYoyWithDept, key: SortKey, order: SortOrder): number {
   const mul = order === 'asc' ? 1 : -1
   if (key === 'customer_name') return a.customer_name.localeCompare(b.customer_name, 'ja') * mul
   return (((a[key] as number) ?? 0) - ((b[key] as number) ?? 0)) * mul
@@ -59,6 +70,13 @@ function sortIcon(state: SortState, key: SortKey): string {
 }
 
 onMounted(async () => {
+  // departments と初回データを並列取得
+  try {
+    const depsRes = await fetchDepartments()
+    departments.value = depsRes.data
+  } catch {
+    departments.value = []
+  }
   await loadData()
 })
 
@@ -68,9 +86,30 @@ async function loadData() {
   selected.value = null
   detail.value = null
   try {
-    const res = await fetchCustomerYoy(from.value, to.value)
-    yoyData.value = res.data
-    yoySource.value = res.source_table
+    if (selectedDept.value) {
+      const res = await fetchCustomerYoyByDept(from.value, to.value, { department_code: selectedDept.value })
+      yoyData.value = {
+        positive: res.data.positive,
+        negative: res.data.negative,
+        min_prev: res.data.min_prev,
+        months: res.data.months,
+      }
+      yoySource.value = res.source_table
+      // departments は API のレスポンスからも返ってくるので最新化
+      if (res.data.departments && res.data.departments.length > 0) {
+        departments.value = res.data.departments
+      }
+    } else {
+      const res = await fetchCustomerYoy(from.value, to.value)
+      // 全社モードは dept 情報を空文字で埋めて CustomerYoyWithDept 互換に
+      yoyData.value = {
+        positive: res.data.positive.map(x => ({ ...x, department_code: '', department_name: '' })),
+        negative: res.data.negative.map(x => ({ ...x, department_code: '', department_name: '' })),
+        min_prev: res.data.min_prev,
+        months: res.data.months,
+      }
+      yoySource.value = res.source_table
+    }
   } catch (e: any) {
     error.value = e.message || '読み込みに失敗しました'
   } finally {
@@ -78,7 +117,7 @@ async function loadData() {
   }
 }
 
-async function selectCustomer(item: CustomerYoy) {
+async function selectCustomer(item: CustomerYoyWithDept) {
   if (selected.value?.customer_code === item.customer_code) {
     selected.value = null
     detail.value = null
@@ -206,12 +245,19 @@ const lineOption = computed(() => {
     </header>
 
     <main class="max-w-7xl mx-auto px-4 py-6">
-      <!-- 期間セレクタ -->
-      <div class="bg-white rounded-lg shadow p-4 mb-6 flex items-center gap-4">
+      <!-- 期間セレクタ + 営業所セレクタ -->
+      <div class="bg-white rounded-lg shadow p-4 mb-6 flex items-center gap-4 flex-wrap">
         <label class="text-sm font-medium">期間:</label>
         <input v-model="from" type="month" class="border rounded px-2 py-1 text-sm" />
         <span>〜</span>
         <input v-model="to" type="month" class="border rounded px-2 py-1 text-sm" />
+        <label class="text-sm font-medium ml-2">営業所:</label>
+        <select v-model="selectedDept" class="border rounded px-2 py-1 text-sm" @change="loadData">
+          <option value="">全社</option>
+          <option v-for="d in departments" :key="d.department_code" :value="d.department_code">
+            {{ d.department_name || d.department_code }}
+          </option>
+        </select>
         <button class="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700" @click="loadData">更新</button>
         <span v-if="yoySource" class="text-xs text-gray-400 ml-auto">
           前年{{ yoyData.months }}ヶ月合計 {{ formatMan(yoyData.min_prev) }}万円以上 / {{ yoySource }}
@@ -243,6 +289,7 @@ const lineOption = computed(() => {
                 <thead class="sticky top-0 bg-white">
                   <tr class="border-b text-gray-500">
                     <th class="text-left py-1 w-6">#</th>
+                    <th v-if="selectedDept" class="text-left py-1">営業所</th>
                     <th class="text-left py-1">
                       <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('positive', 'customer_name')">
                         得意先<span class="text-[10px]">{{ sortIcon(positiveSort, 'customer_name') }}</span>
@@ -273,6 +320,7 @@ const lineOption = computed(() => {
                     @click="selectCustomer(item)"
                   >
                     <td class="py-1 text-gray-400">{{ i + 1 }}</td>
+                    <td v-if="selectedDept" class="py-1 truncate max-w-[90px]" :title="item.department_name || item.department_code">{{ item.department_name || item.department_code }}</td>
                     <td class="py-1 truncate max-w-[120px]" :title="item.customer_name">{{ item.customer_name }}</td>
                     <td class="py-1 text-right text-gray-500">{{ formatMan(item.prev_total) }}</td>
                     <td class="py-1 text-right">{{ formatMan(item.current_total) }}</td>
@@ -293,6 +341,7 @@ const lineOption = computed(() => {
                 <thead class="sticky top-0 bg-white">
                   <tr class="border-b text-gray-500">
                     <th class="text-left py-1 w-6">#</th>
+                    <th v-if="selectedDept" class="text-left py-1">営業所</th>
                     <th class="text-left py-1">
                       <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700" @click="toggleSort('negative', 'customer_name')">
                         得意先<span class="text-[10px]">{{ sortIcon(negativeSort, 'customer_name') }}</span>
@@ -323,6 +372,7 @@ const lineOption = computed(() => {
                     @click="selectCustomer(item)"
                   >
                     <td class="py-1 text-gray-400">{{ i + 1 }}</td>
+                    <td v-if="selectedDept" class="py-1 truncate max-w-[90px]" :title="item.department_name || item.department_code">{{ item.department_name || item.department_code }}</td>
                     <td class="py-1 truncate max-w-[120px]" :title="item.customer_name">{{ item.customer_name }}</td>
                     <td class="py-1 text-right text-gray-500">{{ formatMan(item.prev_total) }}</td>
                     <td class="py-1 text-right">{{ formatMan(item.current_total) }}</td>
