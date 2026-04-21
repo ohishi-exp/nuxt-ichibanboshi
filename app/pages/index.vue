@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { MonthlySales, DepartmentSales, CustomerSales, YoyComparison, CustomerMonthly, CustomerYoyResponse } from '~/types'
+import type { MonthlySales, DepartmentSales, CustomerSales, YoyComparison, CustomerMonthly, CustomerYoyResponse, DepartmentOption } from '~/types'
 import { AuthToolbar } from '~/composables/useAuth'
 
-const { fetchMonthlySales, fetchDepartmentSales, fetchCustomerSales, fetchYoy, fetchCustomerTrend, fetchCustomerYoy } = useSalesData()
+const { fetchMonthlySales, fetchDepartmentSales, fetchCustomerSales, fetchYoy, fetchCustomerTrend, fetchCustomerYoy, fetchCustomerYoyByDept, fetchDepartments } = useSalesData()
 
 const loading = ref(true)
 const error = ref('')
@@ -21,27 +21,70 @@ const customerTrend = ref<CustomerMonthly[]>([])
 const trendSource = ref('')
 const customerYoyData = ref<CustomerYoyResponse>({ positive: [], negative: [], min_prev: 0, months: 0 })
 const customerYoySource = ref('')
+const customerYoyDept = ref('')
+const departments = ref<DepartmentOption[]>([])
 
 const currentYear = new Date().getFullYear()
 const from = ref(`${currentYear - 1}-04`)
 const to = ref(`${currentYear}-03`)
-const excludeMiyazaki = ref(false)
+// 月別売上チャートのフィルタ: '' = 全社 / 'exclude:宮崎' = 宮崎除く / 'include:<code>' = 特定営業所
+const monthlyFilter = ref('')
+
+function parseMonthlyFilter(v: string) {
+  if (v.startsWith('include:')) return { includeDept: v.slice(8) }
+  if (v.startsWith('exclude:')) return { excludeDept: v.slice(8) }
+  return {}
+}
 
 onMounted(async () => {
+  try {
+    const deps = await fetchDepartments()
+    departments.value = deps.data
+  } catch {
+    departments.value = []
+  }
   await loadData()
 })
+
+async function reloadCustomerYoy() {
+  try {
+    if (customerYoyDept.value) {
+      const res = await fetchCustomerYoyByDept(from.value, to.value, { department_code: customerYoyDept.value })
+      customerYoyData.value = {
+        positive: res.data.positive as any,
+        negative: res.data.negative as any,
+        min_prev: res.data.min_prev,
+        months: res.data.months,
+      }
+      customerYoySource.value = res.source_table
+    } else {
+      const res = await fetchCustomerYoy(from.value, to.value)
+      customerYoyData.value = res.data
+      customerYoySource.value = res.source_table
+    }
+  } catch {}
+}
+
+function onDeptChange(code: string) {
+  customerYoyDept.value = code
+  reloadCustomerYoy()
+}
 
 async function loadData() {
   loading.value = true
   error.value = ''
   try {
+    const custYoyPromise = customerYoyDept.value
+      ? fetchCustomerYoyByDept(from.value, to.value, { department_code: customerYoyDept.value })
+          .then(r => ({ source_table: r.source_table, data: { positive: r.data.positive, negative: r.data.negative, min_prev: r.data.min_prev, months: r.data.months } as CustomerYoyResponse }))
+      : fetchCustomerYoy(from.value, to.value)
     const [monthly, dept, cust, yoy, trend, custYoy] = await Promise.all([
-      fetchMonthlySales(from.value, to.value, excludeMiyazaki.value ? '宮崎' : undefined),
+      fetchMonthlySales(from.value, to.value, parseMonthlyFilter(monthlyFilter.value)),
       fetchDepartmentSales(from.value, to.value),
       fetchCustomerSales(from.value, to.value),
       fetchYoy(currentYear),
       fetchCustomerTrend(from.value, to.value),
-      fetchCustomerYoy(from.value, to.value),
+      custYoyPromise,
     ])
     monthlySales.value = monthly.data
     monthlySource.value = monthly.source_table
@@ -65,7 +108,7 @@ async function loadData() {
 
 async function reloadMonthly() {
   try {
-    const monthly = await fetchMonthlySales(from.value, to.value, excludeMiyazaki.value ? '宮崎' : undefined)
+    const monthly = await fetchMonthlySales(from.value, to.value, parseMonthlyFilter(monthlyFilter.value))
     monthlySales.value = monthly.data
     monthlySource.value = monthly.source_table
   } catch {}
@@ -107,11 +150,15 @@ async function reloadMonthly() {
 
       <div v-else class="space-y-6">
         <div>
-          <div class="flex justify-end mb-1">
-            <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input v-model="excludeMiyazaki" type="checkbox" class="rounded" @change="reloadMonthly" />
-              宮崎除く
-            </label>
+          <div class="flex justify-end items-center gap-2 mb-1">
+            <label class="text-xs text-gray-600">営業所:</label>
+            <select v-model="monthlyFilter" class="border rounded px-2 py-0.5 text-xs" @change="reloadMonthly">
+              <option value="">全社</option>
+              <option value="exclude:宮崎">宮崎除く</option>
+              <option v-for="d in departments" :key="d.department_code" :value="`include:${d.department_code}`">
+                {{ d.department_name || d.department_code }}
+              </option>
+            </select>
           </div>
           <MonthlySalesChart :data="monthlySales" :source-table="monthlySource" :y-max="monthlyYMax" />
         </div>
@@ -130,7 +177,13 @@ async function reloadMonthly() {
         </div>
 
         <div class="print-section print-table">
-          <CustomerYoyRanking :data="customerYoyData" :source-table="customerYoySource" />
+          <CustomerYoyRanking
+            :data="customerYoyData"
+            :source-table="customerYoySource"
+            :departments="departments"
+            :selected-dept="customerYoyDept"
+            @update:selected-dept="onDeptChange"
+          />
         </div>
 
         <div class="print-section print-chart">
