@@ -117,7 +117,7 @@ const option = computed(() => {
         name: '自車売上',
         type: 'bar',
         stack: 'current',
-        // 自車バー内に自車単体 YoY% を inside 表示（白縁取りで色付き文字）
+        // 自車バー内に自車単体 YoY% を inside 表示（白背景の色付き文字）
         data: props.data.map((d, i) => ({
           value: d.own_sales,
           label: {
@@ -125,10 +125,11 @@ const option = computed(() => {
             position: 'inside',
             formatter: formatYoyPct(ownYoy[i].pct),
             color: yoyColor(ownYoy[i].pct),
+            backgroundColor: '#ffffff',
+            padding: [2, 4],
+            borderRadius: 3,
             fontWeight: 'bold',
             fontSize: 11,
-            textBorderColor: '#ffffff',
-            textBorderWidth: 2,
             overflow: 'truncate',
           },
         })),
@@ -138,7 +139,7 @@ const option = computed(() => {
         name: '傭車売上',
         type: 'bar',
         stack: 'current',
-        // 傭車バー内に傭車単体 YoY% を inside 表示（白縁取りで色付き文字）
+        // 傭車バー内に傭車単体 YoY% を inside 表示（白背景の色付き文字）
         data: props.data.map((d, i) => ({
           value: d.charter_sales,
           label: {
@@ -146,10 +147,11 @@ const option = computed(() => {
             position: 'inside',
             formatter: formatYoyPct(charterYoy[i].pct),
             color: yoyColor(charterYoy[i].pct),
+            backgroundColor: '#ffffff',
+            padding: [2, 4],
+            borderRadius: 3,
             fontWeight: 'bold',
             fontSize: 11,
-            textBorderColor: '#ffffff',
-            textBorderWidth: 2,
             overflow: 'truncate',
           },
         })),
