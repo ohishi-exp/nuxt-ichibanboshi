@@ -136,14 +136,7 @@ async function selectCustomer(item: CustomerYoyWithDept) {
   }
 }
 
-function formatMan(val: number) {
-  return Math.round(val / 10000).toLocaleString('ja-JP')
-}
-
-function formatPct(val: number) {
-  const sign = val > 0 ? '+' : ''
-  return `${sign}${val.toFixed(1)}%`
-}
+const { mode: yoyMode, toggle: toggleYoyMode } = useYoyDisplayMode()
 
 // チャート用
 const currentFy = computed(() => {
@@ -259,6 +252,9 @@ const lineOption = computed(() => {
           </option>
         </select>
         <button class="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700" @click="loadData">更新</button>
+        <button type="button" class="text-xs text-gray-600 hover:text-gray-900 border rounded px-2 py-1" @click="toggleYoyMode">
+          YoY: {{ yoyMode === 'ratio' ? '比率(120%)' : '差分(+20%)' }}
+        </button>
         <span v-if="yoySource" class="text-xs text-gray-400 ml-auto">
           前年{{ yoyData.months }}ヶ月合計 {{ formatMan(yoyData.min_prev) }}万円以上 / {{ yoySource }}
         </span>
@@ -324,7 +320,7 @@ const lineOption = computed(() => {
                     <td class="py-1 truncate max-w-[120px]" :title="item.customer_name">{{ item.customer_name }}</td>
                     <td class="py-1 text-right text-gray-500">{{ formatMan(item.prev_total) }}</td>
                     <td class="py-1 text-right">{{ formatMan(item.current_total) }}</td>
-                    <td class="py-1 text-right font-semibold text-green-600">{{ formatPct(item.yoy_percent) }}</td>
+                    <td class="py-1 text-right font-semibold text-green-600">{{ formatYoyPct(item.yoy_percent, yoyMode) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -376,7 +372,7 @@ const lineOption = computed(() => {
                     <td class="py-1 truncate max-w-[120px]" :title="item.customer_name">{{ item.customer_name }}</td>
                     <td class="py-1 text-right text-gray-500">{{ formatMan(item.prev_total) }}</td>
                     <td class="py-1 text-right">{{ formatMan(item.current_total) }}</td>
-                    <td class="py-1 text-right font-semibold text-red-600">{{ formatPct(item.yoy_percent) }}</td>
+                    <td class="py-1 text-right font-semibold text-red-600">{{ formatYoyPct(item.yoy_percent, yoyMode) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -399,7 +395,7 @@ const lineOption = computed(() => {
               <div class="flex justify-between items-center mb-2">
                 <span class="text-sm font-bold">{{ detail.customer_name }} <span class="text-gray-400 font-normal">{{ detail.customer_code }}</span></span>
                 <span class="text-xs px-2 py-0.5 rounded" :class="selected.yoy_percent >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
-                  YoY {{ formatPct(selected.yoy_percent) }}
+                  YoY {{ formatYoyPct(selected.yoy_percent, yoyMode) }}
                 </span>
               </div>
               <VChart :option="barOption" style="height: 350px" autoresize />

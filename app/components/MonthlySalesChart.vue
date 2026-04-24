@@ -30,10 +30,11 @@ function calcCharterYoy(d: MonthlySales) {
   return yoyFrom(d.prev_year_charter ?? 0, d.charter_sales ?? 0)
 }
 
-function formatYoyPct(pct: number | null): string {
+const { mode: yoyMode, toggle: toggleYoyMode } = useYoyDisplayMode()
+
+function formatMonthlyYoyLabel(pct: number | null): string {
   if (pct === null || !Number.isFinite(pct)) return '-'
-  const sign = pct > 0 ? '+' : ''
-  return `${sign}${pct.toFixed(1)}%`
+  return formatYoyPct(pct, yoyMode.value)
 }
 
 function yoyColor(pct: number | null): string {
@@ -77,9 +78,9 @@ const option = computed(() => {
           const c = charterYoy[idx]
           const t = totalYoy[idx]
           lines.push(
-            `<span style="color:${yoyColor(o.pct)}">YoY(自車): ${formatDiff(o.diff)} (${formatYoyPct(o.pct)})</span>`,
-            `<span style="color:${yoyColor(c.pct)}">YoY(傭車): ${formatDiff(c.diff)} (${formatYoyPct(c.pct)})</span>`,
-            `<span style="color:${yoyColor(t.pct)};font-weight:bold">YoY(全体): ${formatDiff(t.diff)} (${formatYoyPct(t.pct)})</span>`,
+            `<span style="color:${yoyColor(o.pct)}">YoY(自車): ${formatDiff(o.diff)} (${formatMonthlyYoyLabel(o.pct)})</span>`,
+            `<span style="color:${yoyColor(c.pct)}">YoY(傭車): ${formatDiff(c.diff)} (${formatMonthlyYoyLabel(c.pct)})</span>`,
+            `<span style="color:${yoyColor(t.pct)};font-weight:bold">YoY(全体): ${formatDiff(t.diff)} (${formatMonthlyYoyLabel(t.pct)})</span>`,
           )
         }
         return `${m}<br/>${lines.join('<br/>')}`
@@ -123,7 +124,7 @@ const option = computed(() => {
           label: {
             show: true,
             position: 'inside',
-            formatter: formatYoyPct(ownYoy[i].pct),
+            formatter: formatMonthlyYoyLabel(ownYoy[i].pct),
             color: yoyColor(ownYoy[i].pct),
             backgroundColor: '#ffffff',
             padding: [2, 4],
@@ -145,7 +146,7 @@ const option = computed(() => {
           label: {
             show: true,
             position: 'inside',
-            formatter: formatYoyPct(charterYoy[i].pct),
+            formatter: formatMonthlyYoyLabel(charterYoy[i].pct),
             color: yoyColor(charterYoy[i].pct),
             backgroundColor: '#ffffff',
             padding: [2, 4],
@@ -170,7 +171,7 @@ const option = computed(() => {
           label: {
             show: true,
             position: 'top',
-            formatter: formatYoyPct(totalYoy[i].pct),
+            formatter: formatMonthlyYoyLabel(totalYoy[i].pct),
             color: yoyColor(totalYoy[i].pct),
             fontWeight: 'bold',
             fontSize: 11,
@@ -183,7 +184,10 @@ const option = computed(() => {
 </script>
 
 <template>
-  <div class="bg-white rounded-lg shadow p-4">
+  <div class="bg-white rounded-lg shadow p-4 relative">
+    <button type="button" class="absolute top-3 right-3 text-xs text-blue-600 hover:underline z-10" @click="toggleYoyMode">
+      {{ yoyMode === 'ratio' ? 'YoY表示: 比率(120%)' : 'YoY表示: 差分(+20%)' }}
+    </button>
     <VChart :option="option" style="height: 400px; cursor: pointer" autoresize @click="onChartClick" />
     <p v-if="sourceTable" class="text-xs text-gray-400 text-right mt-1">参照: {{ sourceTable }}</p>
   </div>

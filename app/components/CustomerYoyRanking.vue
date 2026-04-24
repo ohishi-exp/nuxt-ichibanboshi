@@ -69,14 +69,7 @@ function sortIcon(state: SortState, key: SortKey): string {
   return state.order === 'asc' ? '▲' : '▼'
 }
 
-function formatMan(val: number) {
-  return Math.round(val / 10000).toLocaleString('ja-JP')
-}
-
-function formatPct(val: number) {
-  const sign = val > 0 ? '+' : ''
-  return `${sign}${val.toFixed(1)}%`
-}
+const { mode: yoyMode, toggle: toggleYoyMode } = useYoyDisplayMode()
 </script>
 
 <template>
@@ -98,6 +91,9 @@ function formatPct(val: number) {
         </template>
       </div>
       <div class="text-right">
+        <button type="button" class="text-xs text-blue-600 hover:underline mb-1" @click="toggleYoyMode">
+          {{ yoyMode === 'ratio' ? '表示: 比率(120%)' : '表示: 差分(+20%)' }}
+        </button>
         <span class="text-xs text-gray-400 block">前年{{ data.months }}ヶ月合計 {{ formatMan(data.min_prev) }}万円以上</span>
         <span v-if="sourceTable" class="text-xs text-gray-400">{{ sourceTable }}</span>
       </div>
@@ -144,7 +140,7 @@ function formatPct(val: number) {
               <td class="py-1.5 truncate max-w-[160px] text-blue-600 hover:underline" :title="item.customer_name">{{ item.customer_name }}</td>
               <td class="py-1.5 text-right text-gray-500">{{ formatMan(item.prev_total) }}</td>
               <td class="py-1.5 text-right">{{ formatMan(item.current_total) }}</td>
-              <td class="py-1.5 text-right font-semibold text-green-600">{{ formatPct(item.yoy_percent) }}</td>
+              <td class="py-1.5 text-right font-semibold text-green-600">{{ formatYoyPct(item.yoy_percent, yoyMode) }}</td>
             </tr>
             <tr v-if="!sortedPositive.length">
               <td :colspan="selectedDept ? 6 : 5" class="py-4 text-center text-gray-400">データなし</td>
@@ -193,7 +189,7 @@ function formatPct(val: number) {
               <td class="py-1.5 truncate max-w-[160px] text-blue-600 hover:underline" :title="item.customer_name">{{ item.customer_name }}</td>
               <td class="py-1.5 text-right text-gray-500">{{ formatMan(item.prev_total) }}</td>
               <td class="py-1.5 text-right">{{ formatMan(item.current_total) }}</td>
-              <td class="py-1.5 text-right font-semibold text-red-600">{{ formatPct(item.yoy_percent) }}</td>
+              <td class="py-1.5 text-right font-semibold text-red-600">{{ formatYoyPct(item.yoy_percent, yoyMode) }}</td>
             </tr>
             <tr v-if="!sortedNegative.length">
               <td :colspan="selectedDept ? 6 : 5" class="py-4 text-center text-gray-400">データなし</td>
