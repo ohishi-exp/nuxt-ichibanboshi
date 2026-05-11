@@ -21,7 +21,11 @@ export default defineEventHandler((event) => {
     sameSite: 'lax' as const,
   })
 
-  const tenantCheck = checkTenantId(cookie, config.allowedTenantId as string)
+  const tenantCheck = checkTenantId(
+    cookie,
+    config.allowedTenantId as string,
+    config.stagingAllowedEmails as string,
+  )
   if (tenantCheck.type === 'forbidden') {
     const domain = getParentDomainFromHost(url.hostname)
     setCookie(event, 'logi_auth_token', '', { ...cookieOpts(domain), maxAge: 0 })
