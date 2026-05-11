@@ -24,7 +24,6 @@ export default defineEventHandler((event) => {
   const tenantCheck = checkTenantId(
     cookie,
     config.allowedTenantId as string,
-    config.stagingAllowedEmails as string,
   )
   if (tenantCheck.type === 'forbidden') {
     const domain = getParentDomainFromHost(url.hostname)

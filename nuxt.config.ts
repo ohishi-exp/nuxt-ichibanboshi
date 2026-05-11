@@ -8,10 +8,9 @@ export default defineNuxtConfig({
     salesApiBase: process.env.NUXT_SALES_API_BASE || 'http://localhost:3100',
     cfAccessClientId: process.env.NUXT_CF_ACCESS_CLIENT_ID || '',
     cfAccessClientSecret: process.env.NUXT_CF_ACCESS_CLIENT_SECRET || '',
+    // staging では空 (未設定) にして auth-worker (APP_TENANT_ACL) に gate を集約。
+    // prod は本番一番星 tenant_id を引き続き設定 (後日 APP_TENANT_ACL に移行予定)。
     allowedTenantId: process.env.NUXT_ALLOWED_TENANT_ID || '',
-    // staging で tenant チェックを bypass する開発者 email リスト (カンマ区切り)。
-    // 本番では未設定 (空) なので影響なし。
-    stagingAllowedEmails: process.env.NUXT_STAGING_ALLOWED_EMAILS || '',
     public: {
       alcApiBase: process.env.NUXT_PUBLIC_ALC_API_BASE || 'http://localhost:8080',
       authWorkerUrl: process.env.NUXT_PUBLIC_AUTH_WORKER_URL || '',
