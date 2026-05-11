@@ -163,6 +163,20 @@ const fyData = computed(() => {
   return map
 })
 
+// 得意先個別チャート (bar/line 共通) の auto max。
+// 5年度分の月別売上の最大値を「切りの良い数字」に丸める (index.vue 月別と同じ方式)。
+const customerAutoMax = computed<number | undefined>(() => {
+  if (!detail.value || detail.value.months.length === 0) return undefined
+  const maxVal = Math.max(...detail.value.months.map(m => m.total_sales), 0)
+  if (maxVal <= 0) return undefined
+  const magnitude = Math.pow(10, Math.floor(Math.log10(maxVal)))
+  return Math.ceil(maxVal / magnitude) * magnitude
+})
+
+// Y軸固定 (チェック ON で現在の auto max をスナップショット)
+const { isLocked: isCustomerYMaxLocked, yMax: customerYMaxLock, lockedLabelMan: customerYMaxLabel }
+  = useChartYMaxLock('customers', customerAutoMax)
+
 const barOption = computed(() => {
   if (!detail.value) return {}
   return {
@@ -181,7 +195,7 @@ const barOption = computed(() => {
     legend: { bottom: 0 },
     grid: { left: 70, right: 20, bottom: 50, top: 45 },
     xAxis: { type: 'category', data: monthOrder },
-    yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${(v / 10000).toLocaleString()}万` } },
+    yAxis: { type: 'value', max: customerYMaxLock.value, axisLabel: { formatter: (v: number) => `${(v / 10000).toLocaleString()}万` } },
     series: fyList.value.map((fy, i) => {
       const monthMap = fyData.value.get(fy)
       return { name: `${fy}年度`, type: 'bar', data: monthOrder.map(m => monthMap?.get(m) ?? 0), itemStyle: { color: colors[i] } }
@@ -207,7 +221,7 @@ const lineOption = computed(() => {
     legend: { bottom: 0 },
     grid: { left: 70, right: 20, bottom: 50, top: 45 },
     xAxis: { type: 'category', data: monthOrder },
-    yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${(v / 10000).toLocaleString()}万` } },
+    yAxis: { type: 'value', max: customerYMaxLock.value, axisLabel: { formatter: (v: number) => `${(v / 10000).toLocaleString()}万` } },
     series: fyList.value.map((fy, i) => {
       const monthMap = fyData.value.get(fy)
       return {
@@ -255,6 +269,11 @@ const lineOption = computed(() => {
         <button type="button" class="text-xs text-gray-600 hover:text-gray-900 border rounded px-2 py-1" @click="toggleYoyMode">
           YoY: {{ yoyMode === 'ratio' ? '比率(120%)' : '差分(+20%)' }}
         </button>
+        <label class="flex items-center gap-1 text-sm cursor-pointer select-none">
+          <input v-model="isCustomerYMaxLocked" type="checkbox" class="rounded" />
+          Y軸固定
+          <span v-if="customerYMaxLabel" class="text-xs text-gray-500">({{ customerYMaxLabel }}万)</span>
+        </label>
         <span v-if="yoySource" class="text-xs text-gray-400 ml-auto">
           前年{{ yoyData.months }}ヶ月合計 {{ formatMan(yoyData.min_prev) }}万円以上 / {{ yoySource }}
         </span>
