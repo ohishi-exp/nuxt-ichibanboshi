@@ -29,3 +29,6 @@ NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
 NUXT_PUBLIC_ALC_API_BASE = "https://rust-alc-api-staging-566bls5vfq-an.a.run.app"
 NUXT_CF_ACCESS_CLIENT_ID = "44252f056e72590bee3c4bb8f85de841.access"
 NUXT_PUBLIC_AUTH_WORKER_URL = "https://auth-staging.ippoan.org"
+# staging で tenant_id が一致しなくてもアクセスできる開発者 email (カンマ区切り)。
+# 本番 worker には設定しないこと (production tenant チェックが残るように)。
+NUXT_STAGING_ALLOWED_EMAILS = "m.tama.ramu@gmail.com"
