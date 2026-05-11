@@ -125,6 +125,11 @@ onUnmounted(() => {
 
 const [year, month] = ym.split('-')
 const displayMonth = `${year}年${parseInt(month)}月`
+
+// 日別グラフ Y軸固定 (チェック ON で現在の auto max をスナップショット)
+const { isLocked: isDailyYMaxLocked, yMax: dailyYMaxLock, lockedLabelMan: dailyYMaxLabel }
+  = useChartYMaxLock('daily', yAxisMax)
+const effectiveDailyYMax = computed<number | undefined>(() => dailyYMaxLock.value ?? yAxisMax.value)
 </script>
 
 <template>
@@ -196,10 +201,15 @@ const displayMonth = `${year}年${parseInt(month)}月`
             <input v-model="excludeMiyazaki" type="checkbox" class="rounded" @change="toggleMiyazaki" />
             宮崎除く
           </label>
+          <label class="flex items-center gap-1 text-sm cursor-pointer select-none">
+            <input v-model="isDailyYMaxLocked" type="checkbox" class="rounded" />
+            Y軸固定
+            <span v-if="dailyYMaxLabel" class="text-xs text-gray-500">({{ dailyYMaxLabel }}万)</span>
+          </label>
           <span class="text-xs text-gray-400">Tab: 切替 / ← →: 選択</span>
         </div>
 
-        <DailySalesChart :data="dailySales" :month="displayMonth" :source-table="dailySource" :y-axis-max="yAxisMax" :amount-mode="amountMode" />
+        <DailySalesChart :data="dailySales" :month="displayMonth" :source-table="dailySource" :y-axis-max="effectiveDailyYMax" :amount-mode="amountMode" />
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <DepartmentSalesChart :data="departmentSales" :source-table="deptSource" />

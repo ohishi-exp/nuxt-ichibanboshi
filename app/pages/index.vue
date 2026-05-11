@@ -161,6 +161,13 @@ async function reloadMonthly() {
     monthlySource.value = monthly.source_table
   } catch {}
 }
+
+// 月別グラフ Y軸固定 (チェック ON で現在の auto max をスナップショット)
+// monthlyYMax は 0 を「auto」として扱うので、composable には > 0 のときだけ値を渡す
+const monthlyAutoMax = computed<number | undefined>(() => (monthlyYMax.value > 0 ? monthlyYMax.value : undefined))
+const { isLocked: isMonthlyYMaxLocked, yMax: monthlyYMaxLock, lockedLabelMan: monthlyYMaxLabel }
+  = useChartYMaxLock('monthly', monthlyAutoMax)
+const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.value ?? monthlyAutoMax.value)
 </script>
 
 <template>
@@ -207,8 +214,13 @@ async function reloadMonthly() {
                 {{ d.department_name || d.department_code }}
               </option>
             </select>
+            <label class="flex items-center gap-1 text-xs cursor-pointer select-none ml-2">
+              <input v-model="isMonthlyYMaxLocked" type="checkbox" class="rounded" />
+              Y軸固定
+              <span v-if="monthlyYMaxLabel" class="text-gray-500">({{ monthlyYMaxLabel }}万)</span>
+            </label>
           </div>
-          <MonthlySalesChart :data="monthlySales" :source-table="monthlySource" :y-max="monthlyYMax" />
+          <MonthlySalesChart :data="monthlySales" :source-table="monthlySource" :y-max="effectiveMonthlyYMax" />
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
