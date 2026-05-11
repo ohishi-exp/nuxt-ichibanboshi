@@ -79,16 +79,15 @@ export type TenantCheckResult =
  * JWT cookie の tenant_id チェック。
  *
  * - `allowedTenantId` が空: チェック無効 (pass)
+ *   → staging では NUXT_ALLOWED_TENANT_ID secret を未設定にして auth-worker
+ *     (APP_TENANT_ACL + bypass_emails) に gate を集約する想定
  * - cookie 無し: 認証 middleware の前段なので pass
- * - JWT.email が `stagingAllowedEmails` (カンマ区切り) に含まれる: tenant 不一致でも pass
- *   → staging 環境で複数開発者アカウントを許可するための bypass
  * - JWT.tenant_id が `allowedTenantId` と一致: pass
  * - それ以外: forbidden
  */
 export function checkTenantId(
   cookie: string | undefined,
   allowedTenantId: string,
-  stagingAllowedEmails?: string,
 ): TenantCheckResult {
   if (!allowedTenantId) return { type: 'pass' }
   if (!cookie) return { type: 'pass' }
@@ -96,17 +95,6 @@ export function checkTenantId(
     const payloadPart = cookie.split('.')[1]
     if (!payloadPart) return { type: 'forbidden', reason: 'invalid token' }
     const payload = JSON.parse(atob(payloadPart))
-
-    // staging 用開発者 email 許可リスト (tenant 不一致でも通す)
-    if (stagingAllowedEmails && typeof payload.email === 'string') {
-      const allowed = stagingAllowedEmails
-        .split(',')
-        .map(e => e.trim().toLowerCase())
-        .filter(Boolean)
-      if (allowed.includes(payload.email.toLowerCase())) {
-        return { type: 'pass' }
-      }
-    }
 
     if (payload.tenant_id !== allowedTenantId) {
       return { type: 'forbidden', reason: 'tenant_id mismatch' }
