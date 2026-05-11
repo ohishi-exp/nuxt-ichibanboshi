@@ -8,7 +8,15 @@ const loading = ref(true)
 const error = ref('')
 
 const monthlySales = ref<MonthlySales[]>([])
-const monthlyYMax = ref(0)
+// monthlySales から派生する Y軸 auto max (営業所セレクタ変更時も自動追従)。
+// ref + 代入だと reloadMonthly() で更新し忘れて Y軸固定 OFF でも古い値で張り付く
+// バグ (chart 上で本社単独データなのに全社合計値の高さで縦軸が固定される) が
+// 発生したため computed 化した。
+const monthlyYMax = computed(() =>
+  monthlySales.value.length > 0
+    ? Math.max(...monthlySales.value.map(d => Math.max(d.total_sales, d.prev_year_total)))
+    : 0,
+)
 const departmentSales = ref<DepartmentSales[]>([])
 const customerSales = ref<CustomerSales[]>([])
 const yoyData = ref<YoyComparison[]>([])
@@ -136,7 +144,6 @@ async function loadData() {
     ])
     monthlySales.value = monthly.data
     monthlySource.value = monthly.source_table
-    monthlyYMax.value = Math.max(...monthly.data.map(d => Math.max(d.total_sales, d.prev_year_total)))
     departmentSales.value = dept.data
     deptSource.value = dept.source_table
     customerSales.value = cust.data
