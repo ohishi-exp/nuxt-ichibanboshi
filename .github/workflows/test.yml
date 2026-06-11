@@ -19,6 +19,9 @@ jobs:
     with:
       has_tests: false
       use_auth_client_dev: true
+      # lockfile が ^0.2.55 未満を pin していても manifest に追従して解決する
+      # (org caller template 標準。CCoW からは lockfile を再生成できないため)
+      install_command: 'npm install'
       post_install_script: 'npx nuxt prepare'
     secrets:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

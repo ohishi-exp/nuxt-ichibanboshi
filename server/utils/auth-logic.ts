@@ -1,106 +1,16 @@
 /**
- * 認証ミドルウェアのコアロジック（テスタブル）
- */
-
-/** ホスト名から親ドメインを取得（cross-subdomain cookie 用） */
-export function getParentDomainFromHost(hostname: string): string | undefined {
-  const parts = hostname.split('.')
-  return parts.length > 2 ? '.' + parts.slice(-2).join('.') : undefined
-}
-
-export interface AuthConfig {
-  apiBackend: string
-  authWorkerUrl: string
-}
-
-export interface AuthRequest {
-  pathname: string
-  origin: string
-  hostname: string
-  searchParams: URLSearchParams
-  cookie: string | undefined         // logi_auth_token
-  lwDomainCookie: string | undefined  // lw_domain
-}
-
-export type AuthAction =
-  | { type: 'pass' }
-  | { type: 'set-cookie-and-pass'; name: string; value: string; domain: string | undefined }
-  | { type: 'set-cookie-and-redirect'; name: string; value: string; domain: string | undefined; redirectUrl: string }
-  | { type: 'redirect'; redirectUrl: string }
-
-export function resolveAuthAction(config: AuthConfig, req: AuthRequest): AuthAction {
-  if (config.apiBackend !== 'rust-logi' && config.apiBackend !== 'rust-alc-api') {
-    return { type: 'pass' }
-  }
-
-  if (req.pathname.startsWith('/api/')) return { type: 'pass' }
-  if (req.cookie) return { type: 'pass' }
-  if (!config.authWorkerUrl) return { type: 'pass' }
-  if (req.searchParams.has('lw_callback')) return { type: 'pass' }
-  if (req.searchParams.has('logout')) return { type: 'pass' }
-
-  const domain = getParentDomainFromHost(req.hostname)
-  const redirectUri = `${req.origin}/?lw_callback=1`
-
-  // ?lw=<domain> — LINE WORKS 自動ログイン
-  const lwParam = req.searchParams.get('lw')
-  if (lwParam) {
-    const params = new URLSearchParams({ domain: lwParam, redirect_uri: redirectUri })
-    return {
-      type: 'set-cookie-and-redirect',
-      name: 'lw_domain',
-      value: lwParam,
-      domain,
-      redirectUrl: `${config.authWorkerUrl}/api/auth/lineworks/redirect?${params.toString()}`,
-    }
-  }
-
-  // lw_domain cookie — 自動ログイン
-  if (req.lwDomainCookie) {
-    const params = new URLSearchParams({ domain: req.lwDomainCookie, redirect_uri: redirectUri })
-    return {
-      type: 'redirect',
-      redirectUrl: `${config.authWorkerUrl}/api/auth/lineworks/redirect?${params.toString()}`,
-    }
-  }
-
-  // デフォルト
-  return {
-    type: 'redirect',
-    redirectUrl: `${config.authWorkerUrl}/login?redirect_uri=${encodeURIComponent(redirectUri)}`,
-  }
-}
-
-export type TenantCheckResult =
-  | { type: 'pass' }
-  | { type: 'forbidden'; reason: string }
-
-/**
- * JWT cookie の tenant_id チェック。
+ * 認証ミドルウェアのコアロジック
  *
- * - `allowedTenantId` が空: チェック無効 (pass)
- *   → staging では NUXT_ALLOWED_TENANT_ID secret を未設定にして auth-worker
- *     (APP_TENANT_ACL + bypass_emails) に gate を集約する想定
- * - cookie 無し: 認証 middleware の前段なので pass
- * - JWT.tenant_id が `allowedTenantId` と一致: pass
- * - それ以外: forbidden
+ * 実装は @ippoan/auth-client/server に集約済み (Refs ippoan/auth-worker#257、
+ * nuxt-pwa-carins との相互コピーを 1 本化)。ここは既存 import /
+ * Nitro auto-import 互換のための re-export。
  */
-export function checkTenantId(
-  cookie: string | undefined,
-  allowedTenantId: string,
-): TenantCheckResult {
-  if (!allowedTenantId) return { type: 'pass' }
-  if (!cookie) return { type: 'pass' }
-  try {
-    const payloadPart = cookie.split('.')[1]
-    if (!payloadPart) return { type: 'forbidden', reason: 'invalid token' }
-    const payload = JSON.parse(atob(payloadPart))
-
-    if (payload.tenant_id !== allowedTenantId) {
-      return { type: 'forbidden', reason: 'tenant_id mismatch' }
-    }
-    return { type: 'pass' }
-  } catch {
-    return { type: 'forbidden', reason: 'invalid token' }
-  }
-}
+export {
+  getParentDomainFromHost,
+  resolveAuthAction,
+  checkTenantId,
+  type AuthConfig,
+  type AuthRequest,
+  type AuthAction,
+  type TenantCheckResult,
+} from '@ippoan/auth-client/server'
