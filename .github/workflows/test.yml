@@ -30,3 +30,18 @@ jobs:
       # auto-merge job が App installation token を mint できる
       CI_APP_ID: ${{ secrets.CI_APP_ID }}
       CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+  # 一時プローブ (Refs ippoan/ci-workflows#125): caller context で org secret が
+  # 見えるかを booleans で実測する。値は一切出力しない。確認後に revert する。
+  secret-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe secret visibility (no values printed)
+        env:
+          HAS_APP_ID: ${{ secrets.CI_APP_ID != '' }}
+          HAS_APP_KEY: ${{ secrets.CI_APP_PRIVATE_KEY != '' }}
+          HAS_TAG_PAT: ${{ secrets.TAG_RELEASE_PAT != '' }}
+        run: |
+          echo "CI_APP_ID present:          $HAS_APP_ID"
+          echo "CI_APP_PRIVATE_KEY present: $HAS_APP_KEY"
+          echo "TAG_RELEASE_PAT present:    $HAS_TAG_PAT"
