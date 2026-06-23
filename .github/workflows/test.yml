@@ -23,6 +23,10 @@ jobs:
       # (org caller template 標準。CCoW からは lockfile を再生成できないため)
       install_command: 'npm install'
       post_install_script: 'npx nuxt prepare'
+      # single-env (staging = prod): staging / release とも同一 wrangler.toml を
+      # live worker (ichibanboshi.ippoan.org) に deploy する。
+      deploy_staging_script: 'npm run build && npx wrangler deploy'
+      deploy_release_script: 'npm run build && npx wrangler deploy'
       # CF Access client_secret を CF Secrets Store binding 化したため frontend-ci 内蔵の
       # secret-verify が必須化する。GCP cloudsql-sv の CF_ACCESS_CLIENT_SECRET を検証する。
       gcp_secret_verify_project: cloudsql-sv
@@ -35,3 +39,4 @@ jobs:
       # auto-merge job が App installation token を mint できる
       CI_APP_ID: ${{ secrets.CI_APP_ID }}
       CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+      TAG_RELEASE_PAT: ${{ secrets.TAG_RELEASE_PAT }}
