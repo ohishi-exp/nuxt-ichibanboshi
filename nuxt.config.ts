@@ -7,7 +7,8 @@ export default defineNuxtConfig({
     // サーバーサイド専用（ブラウザに漏れない）
     salesApiBase: process.env.NUXT_SALES_API_BASE || 'http://localhost:3100',
     cfAccessClientId: process.env.NUXT_CF_ACCESS_CLIENT_ID || '',
-    cfAccessClientSecret: process.env.NUXT_CF_ACCESS_CLIENT_SECRET || '',
+    // cfAccessClientSecret は廃止 — CF Secrets Store binding (CF_ACCESS_CLIENT_SECRET) を
+    // salesApi.ts が event.context.cloudflare.env から直接読む (wrangler secret 廃止)。
     // staging では空 (未設定) にして auth-worker (APP_TENANT_ACL) に gate を集約。
     // prod は本番一番星 tenant_id を引き続き設定 (後日 APP_TENANT_ACL に移行予定)。
     allowedTenantId: process.env.NUXT_ALLOWED_TENANT_ID || '',

@@ -15,8 +15,17 @@ custom_domain = true
 NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
 NUXT_PUBLIC_ALC_API_BASE = "https://alc-api.ippoan.org"
 NUXT_PUBLIC_AUTH_WORKER_URL = "https://auth.ippoan.org"
-NUXT_CF_ACCESS_CLIENT_ID = "44252f056e72590bee3c4bb8f85de841.access"
-# NUXT_CF_ACCESS_CLIENT_SECRET は wrangler secret で設定
+# 一番星 (rust-ichiban) 向け CF Access service token を `rust-ichibanboshi-ci-deploy`
+# (824a8b3c) に統一 (seikyu / nuxt-ichibanboshi 共通)。client_id は公開識別子なので var。
+NUXT_CF_ACCESS_CLIENT_ID = "824a8b3c7042c7040924f38797a832f7.access"
+
+# CF Access client_secret は wrangler secret をやめ、CF Secrets Store binding に移行
+# (824a8b3c のペア。GCP cloudsql-sv の CF_ACCESS_CLIENT_SECRET を SoT に sync 済)。
+# salesApi.ts が event.context.cloudflare.env.CF_ACCESS_CLIENT_SECRET.get() で読む。
+[[secrets_store_secrets]]
+binding = "CF_ACCESS_CLIENT_SECRET"
+store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
+secret_name = "CF_ACCESS_CLIENT_SECRET"
 
 [env.staging]
 name = "nuxt-ichibanboshi-staging"
@@ -27,11 +36,12 @@ custom_domain = true
 [env.staging.vars]
 NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
 NUXT_PUBLIC_ALC_API_BASE = "https://rust-alc-api-staging-566bls5vfq-an.a.run.app"
-NUXT_CF_ACCESS_CLIENT_ID = "2a71ff209a247c645906282bbff8eb02.access"
+# staging も 824a8b3c に統一 (アカウント共通トークン、allowlist 登録済)。
+NUXT_CF_ACCESS_CLIENT_ID = "824a8b3c7042c7040924f38797a832f7.access"
 NUXT_PUBLIC_AUTH_WORKER_URL = "https://auth-staging.ippoan.org"
 # staging の tenant gate は auth-worker (APP_TENANT_ACL + bypass_emails) に集約済。
-# NUXT_ALLOWED_TENANT_ID secret も staging では削除済 (`wrangler secret delete ... --env staging`)。
-# NUXT_CF_ACCESS_CLIENT_SECRET は wrangler secret put --env staging で設定。
-# staging 用に発行した Service Token (Client ID `2a71ff20...access`) のペア値で、
-# 本番 worker (`44252f05...access`) とは独立。CF Access Application allowlist には
-# 両 Service Token を登録済。
+
+[[env.staging.secrets_store_secrets]]
+binding = "CF_ACCESS_CLIENT_SECRET"
+store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
+secret_name = "CF_ACCESS_CLIENT_SECRET"
