@@ -27,6 +27,9 @@ jobs:
       # live worker (ichibanboshi.ippoan.org) に deploy する。
       deploy_staging_script: 'npm run build && npx wrangler deploy'
       deploy_release_script: 'npm run build && npx wrangler deploy'
+      # release-wave 非参加なので flip 機構が無い。tag release を即 100% deploy
+      # にする (default true = no-traffic upload だと prod traffic が切り替わらない)
+      release_no_traffic: false
       # CF Access client_secret を CF Secrets Store binding 化したため frontend-ci 内蔵の
       # secret-verify が必須化する。GCP cloudsql-sv の CF_ACCESS_CLIENT_SECRET を検証する。
       gcp_secret_verify_project: cloudsql-sv
@@ -40,3 +43,5 @@ jobs:
       CI_APP_ID: ${{ secrets.CI_APP_ID }}
       CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
       TAG_RELEASE_PAT: ${{ secrets.TAG_RELEASE_PAT }}
+      # deploy-release の traffic-report 用 (cross-org は inherit 不可 → 明示渡し)
+      RELEASE_WAVE_WEBHOOK_SECRET: ${{ secrets.RELEASE_WAVE_WEBHOOK_SECRET }}
