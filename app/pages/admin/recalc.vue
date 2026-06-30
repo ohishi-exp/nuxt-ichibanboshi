@@ -8,6 +8,7 @@
  * 月次集計は rust 側で日次の VIEW に降格済 (#38)、UI も日次が SoT として表示する。
  */
 import { AuthToolbar } from '~/composables/useAuth'
+import UriagePersonRankingChart from '~/components/UriagePersonRankingChart.vue'
 
 interface RecalcJob {
   month: string
@@ -79,6 +80,11 @@ const deleting = ref<Record<string, boolean>>({})
 const rebuildLoading = ref(false)
 const rebuildMsg = ref('')
 
+// ── 担当者ランキング chart 用 (recalc 後に全 computed bucket の daily を集約) ──
+const rankingData = ref<Record<string, number>>({})
+const rankingLoading = ref(false)
+const rankingMonthLabel = computed(() => result.value?.months.join(', ') ?? '')
+
 const busy = computed(() => phase.value === 'recalc' || phase.value === 'sync')
 
 function phaseLabel(p: Phase): string {
@@ -102,6 +108,7 @@ async function runRecalcAndSync() {
   syncResult.value = null
   dailyOpen.value = {}
   dailyData.value = {}
+  rankingData.value = {}
   phase.value = 'recalc'
   try {
     const params = new URLSearchParams()
@@ -122,10 +129,47 @@ async function runRecalcAndSync() {
     const s = await $fetch<SyncResult>('/api/uriage/r2-sync', { method: 'POST' })
     syncResult.value = s
     phase.value = 'done'
+    // 完了後、担当者ランキング chart 用に全 computed bucket の daily を非同期 fetch
+    // (失敗しても recalc 全体は成功扱い、グラフは部分集計でも表示)
+    void loadRanking()
   } catch (e: unknown) {
     const err = e as { statusCode?: number; statusMessage?: string; data?: string }
     error.value = `エラー (${phase.value}): ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${err.data ?? ''}`
     phase.value = 'error'
+  }
+}
+
+/**
+ * 全 computed bucket から daily を一括 fetch し、担当者名 → SUM(kingaku) に集約する。
+ * cal=true をベースに使う (= 別営業所合算、通常の月計と一致する値)。
+ * 失敗した bucket は無視 (best effort、グラフは部分集計でも表示する)。
+ */
+async function loadRanking() {
+  if (!result.value) return
+  rankingLoading.value = true
+  rankingData.value = {}
+  try {
+    const computedJobs = result.value.jobs.filter((j) => j.status === 'computed')
+    const responses = await Promise.all(
+      computedJobs.map((j) => {
+        const params = new URLSearchParams({
+          month: j.month,
+          eigyosho_id: String(j.eigyosho_id),
+          cal: 'true',
+        })
+        return $fetch<DailyResponse>(`/api/uriage/daily?${params.toString()}`).catch(() => null)
+      }),
+    )
+    const totals: Record<string, number> = {}
+    for (const res of responses) {
+      if (!res) continue
+      for (const r of res.rows) {
+        totals[r.person_name] = (totals[r.person_name] ?? 0) + r.kingaku
+      }
+    }
+    rankingData.value = totals
+  } finally {
+    rankingLoading.value = false
   }
 }
 
@@ -220,6 +264,7 @@ async function rebuildAll() {
     syncResult.value = null
     dailyOpen.value = {}
     dailyData.value = {}
+    rankingData.value = {}
   } catch (e: unknown) {
     const err = e as { statusCode?: number; statusMessage?: string }
     rebuildMsg.value = `❌ エラー: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
@@ -300,6 +345,17 @@ function fmtYen(n: number): string {
         <div v-if="error" class="text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2 text-sm whitespace-pre-wrap">
           {{ error }}
         </div>
+      </div>
+
+      <div v-if="result && result.jobs.some((j) => j.status === 'computed')" class="mb-4">
+        <div v-if="rankingLoading" class="bg-white rounded-lg shadow p-4 text-sm text-gray-500 text-center">
+          担当者ランキング集計中…
+        </div>
+        <UriagePersonRankingChart
+          v-else
+          :data="rankingData"
+          :month-label="rankingMonthLabel"
+        />
       </div>
 
       <div v-if="result" class="bg-white rounded-lg shadow p-4">
