@@ -1073,8 +1073,24 @@ async function runR2SyncFromYear2026() {
       <div v-if="historyMsg" class="text-sm whitespace-pre-wrap" :class="historyMsg.startsWith('❌') ? 'text-red-700' : 'text-green-700'">
         {{ historyMsg }}
       </div>
-      <div v-if="r2SyncMsg" class="text-sm whitespace-pre-wrap text-purple-800 bg-purple-50 border border-purple-200 rounded px-3 py-2">
-        🚀 {{ r2SyncMsg }}
+      <div v-if="r2SyncMsg" class="text-sm whitespace-pre-wrap text-purple-800 bg-purple-50 border border-purple-200 rounded px-3 py-2 space-y-2">
+        <div>🚀 {{ r2SyncMsg }}</div>
+        <!-- 行単位 verify / 一括 verify 時の inline 進捗 (user 2026-06-30 「進捗わからない」)。
+             下部の進捗 panel が summary table の下にあって視認できないため、message
+             エリアにも mini progress bar を出して即座に分かるように。 -->
+        <div v-if="r2SyncLoading && counts.total > 0" class="text-xs text-purple-900">
+          <div class="mb-1">
+            進捗: <strong>{{ counts.done }} / {{ counts.total }}</strong>
+            ({{ progress }} %) —
+            <span class="text-green-700">OK={{ counts.ok }}</span>
+            <span class="ml-1 text-red-700">NG={{ counts.ng }}</span>
+            <span class="ml-1 text-orange-700">ERR={{ counts.err }}</span>
+            <span class="ml-1 text-gray-600">skipped={{ counts.skipped }}</span>
+          </div>
+          <div class="w-full bg-purple-200 rounded h-1.5 overflow-hidden">
+            <div class="bg-purple-600 h-1.5 transition-all" :style="{ width: progress + '%' }"></div>
+          </div>
+        </div>
       </div>
       <div v-if="r2SyncResult" class="text-xs text-gray-700">
         attempted={{ r2SyncResult.attempted }} uploaded={{ r2SyncResult.uploaded }}
