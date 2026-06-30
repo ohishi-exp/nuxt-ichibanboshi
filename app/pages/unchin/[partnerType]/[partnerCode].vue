@@ -406,7 +406,10 @@ function printList() {
             >
               {{ grouping ? '登録中…' : groupKind === 'exception' ? '例外として記録' : 'グルーピングを登録' }}
             </button>
-            <button class="text-xs text-gray-500 hover:underline" @click="selectedForGroup = new Set()">
+            <button
+              class="text-xs text-gray-700 border rounded px-3 py-1 hover:bg-gray-100"
+              @click="selectedForGroup = new Set()"
+            >
               選択解除
             </button>
           </div>
