@@ -28,3 +28,18 @@ NUXT_CF_ACCESS_CLIENT_ID = "824a8b3c7042c7040924f38797a832f7.access"
 binding = "CF_ACCESS_CLIENT_SECRET"
 store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
 secret_name = "CF_ACCESS_CLIENT_SECRET"
+
+# 担当者別売上 raw NDJSON.gz の R2 backup (rust-ichiban Phase 2 PR-D 連動、
+# Refs ohishi-exp/rust-ichibanboshi#37)。`uriage/{month}/eigyosho-{id}.ndjson.gz` 規約で
+# rust の disk 配置 (`/opt/ichibanboshi/raw/{month}/eigyosho-{id}.ndjson.gz`) と 1:1。
+# bucket は ohishi-data 復旧用 warm backup 兼、後段 BigQuery / DuckDB 解析の入口。
+[[r2_buckets]]
+binding = "URIAGE_R2"
+bucket_name = "ichibanboshi-uriage"
+
+# rust-ichiban の `/api/uriage/r2/pending` を 15 分おきに polling し、fingerprint
+# 変化があった raw NDJSON.gz を R2 (URIAGE_R2) に upload + ack する scheduled task。
+# nuxt.config の nitro.scheduledTasks と同式 (両方必須)。
+# `*/15 * * * *` = 毎時 00/15/30/45 分。
+[triggers]
+crons = ["*/15 * * * *"]
