@@ -50,7 +50,12 @@ interface VerifyJob {
 const monthInput = ref('') // YYYY-MM、変更で from/to を月初〜月末に自動セット
 const from = ref('')
 const to = ref('')
-const officesInput = ref('1,2,3,4,5,6,7,8,9,10,11,12,13,14,15')
+// 実在 office_id (CakePHP masters の eigyosho id、bumon empty の 13 は除外)。
+// 旧 default の `1..15` だと不在 id (2,3,4,14,15) が 404 → skipped に倒れ、
+// `13` も bumon empty で no_bumon → skipped となり、4 月で 360/900 件 (40%) が
+// skipped になる問題があった (user 報告 2026-06-30)。verify 不要なものを
+// expand しないことで skipped を 0 に近づける。新 office 増減時は要更新。
+const officesInput = ref('1,5,6,7,8,9,10,11,12')
 const calMode = ref<'both' | 'true' | 'false'>('both')
 const concurrency = ref(4)
 
