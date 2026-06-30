@@ -332,7 +332,7 @@ function printList() {
                   <span
                     v-for="(r, ri) in it.routes"
                     :key="ri"
-                    class="inline-block mr-2 mb-1 px-2 py-0.5 bg-gray-100 rounded text-xs"
+                    class="block w-fit mb-1 px-2 py-0.5 bg-gray-100 rounded text-xs whitespace-nowrap"
                   >
                     {{ r.origin || '?' }} → {{ r.dest || '?' }}
                   </span>
