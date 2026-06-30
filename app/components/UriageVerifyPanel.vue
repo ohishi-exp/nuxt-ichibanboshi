@@ -493,11 +493,17 @@ async function runR2SyncVerifyFirst() {
   r2SyncResult.value = null
   r2SyncPhase.value = 'fetch-pending'
   try {
-    // 1. pending list
-    r2SyncMsg.value = '[1/3] pending list 取得中…'
-    const pendingRes = await $fetch<{ count: number; items: R2PendingItem[] }>(
-      '/api/uriage/r2-pending',
-    )
+    // 1. pending list (user 2026-06-30: 「R2 同期も recalc も期間に従う」)
+    // UI の from/to から YYYY-MM を抽出して rust の r2_pending を期間 filter する。
+    // 状態サマリは全期間だが、R2 同期 / verify は UI 期間に従う設計。
+    const fromMonth = from.value.slice(0, 7)
+    const toMonth = to.value.slice(0, 7)
+    const pendingUrl =
+      fromMonth && toMonth
+        ? `/api/uriage/r2-pending?from=${fromMonth}&to=${toMonth}`
+        : '/api/uriage/r2-pending'
+    r2SyncMsg.value = `[1/3] pending list 取得中… (${fromMonth} 〜 ${toMonth})`
+    const pendingRes = await $fetch<{ count: number; items: R2PendingItem[] }>(pendingUrl)
     const unverified = pendingRes.items.filter((i) => i.blocker === 'unverified')
     const ngPresent = pendingRes.items.filter((i) => i.blocker === 'ng_present')
     const readyCount = pendingRes.items.filter((i) => i.ready).length
@@ -581,29 +587,35 @@ async function runR2SyncVerifyFirst() {
 }
 
 /**
- * 対象期間の recalc_jobs を読んで状態サマリを表示する。
- * - 行が無い → recalc 未実行
- * - status=computed + r2_synced_at=null → 計算済、R2 同期待ち
- * - status=r2_synced → 同期済
- * - status=failed → recalc 失敗 (last_error 付き)
+ * recalc_jobs を読んで状態サマリを表示する (user 要望: 状態サマリは全期間表示・降順)。
+ *
+ * 引数なしで叩くと **全期間 (from/to なし)** を取得し、rust 側で
+ * `ORDER BY month DESC, eigyosho_id ASC` で返ってくる。
+ * `applyFilter=true` を渡すと UI の from/to を query に乗せて期間 filter する。
+ *
+ * - 行が無い → recalc 未実行 (orange バナー)
+ * - status=computed → 🟡 計算済、R2 同期待ち (r2_synced_at の有無は表示に使わない)
+ * - status=r2_synced → ✅ R2 同期済
+ * - status=failed → ❌ recalc 失敗 (last_error 付き)
  */
-async function loadStatusSummary() {
+async function loadStatusSummary(applyFilter: boolean = false) {
   summaryMsg.value = ''
   summaryLoading.value = true
   try {
-    // from / to から YYYY-MM を抽出 (date input は YYYY-MM-DD 形式)
-    const fromMonth = from.value.slice(0, 7)
-    const toMonth = to.value.slice(0, 7)
-    if (!fromMonth || !toMonth) {
-      summaryMsg.value = '日付範囲を入力してください'
-      return
+    let url = '/api/uriage/recalc-jobs'
+    let label = '全期間'
+    if (applyFilter) {
+      const fromMonth = from.value.slice(0, 7)
+      const toMonth = to.value.slice(0, 7)
+      if (fromMonth && toMonth) {
+        const params = new URLSearchParams({ from: fromMonth, to: toMonth })
+        url = `/api/uriage/recalc-jobs?${params.toString()}`
+        label = `${fromMonth} 〜 ${toMonth}`
+      }
     }
-    const params = new URLSearchParams({ from: fromMonth, to: toMonth })
-    const res = await $fetch<RecalcJobsResponse>(
-      `/api/uriage/recalc-jobs?${params.toString()}`,
-    )
+    const res = await $fetch<RecalcJobsResponse>(url)
     summaryJobs.value = res.jobs
-    summaryMsg.value = `期間 ${fromMonth} 〜 ${toMonth}: recalc_jobs ${res.count} 件`
+    summaryMsg.value = `${label}: recalc_jobs ${res.count} 件`
   } catch (e: unknown) {
     const err = e as { statusCode?: number; statusMessage?: string }
     summaryMsg.value = `❌ サマリ取得失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
@@ -613,11 +625,17 @@ async function loadStatusSummary() {
   }
 }
 
-/** recalc_job status → 表示用ラベル + 色 */
+/**
+ * recalc_job status → 表示用ラベル + 色。
+ *
+ * `r2_synced_at` の有無で UI を分けない (user 2026-06-30: status='computed' で
+ * r2_synced_at が非 null になる古い data が混じって "computed" だけ表示される
+ * バグがあった。本質的に status='computed' = R2 未同期、で統一する)。
+ */
 function jobStatusLabel(j: RecalcJobRow): { text: string; cls: string } {
   if (j.status === 'r2_synced')
     return { text: '✅ R2 同期済', cls: 'text-green-700' }
-  if (j.status === 'computed' && j.r2_synced_at === null)
+  if (j.status === 'computed')
     return { text: '🟡 計算済、R2 同期待ち', cls: 'text-yellow-700' }
   if (j.status === 'failed')
     return { text: `❌ 失敗: ${j.last_error ?? '?'}`, cls: 'text-red-700' }
@@ -679,7 +697,10 @@ function setDefaultRange() {
   const mStr = String(m).padStart(2, '0')
   const d = today.getUTCDate()
   const dStr = String(d).padStart(2, '0')
-  from.value = `${y}-${mStr}-01`
+  // user 要望 (2026-06-30): 「2026/1 から実行できるように」
+  // 検証 / R2 同期の起点を 2026-01-01 にして、to を今日まで。
+  // 月選択 input は当月をデフォルト (個別月だけ動かしたい時にすぐ切り替えられる)。
+  from.value = '2026-01-01'
   to.value = `${y}-${mStr}-${dStr}`
   monthInput.value = `${y}-${mStr}`
 }
@@ -715,6 +736,94 @@ watch(monthInput, (v) => {
 })
 
 if (!from.value || !to.value) setDefaultRange()
+
+/**
+ * 「未検証 bucket だけ verify」ボタン用 orchestrator。
+ *
+ * R2 同期 (verify-first) と違い、**R2 sync 段階は実行しない**。
+ * UI 期間 (from/to) の r2_pending で blocker='unverified' な bucket を集めて
+ * (date, office, cal) に展開し、browser worker pool で並列 verify する。
+ *
+ * (user 2026-06-30: 「未実施分を検証とかできるようにuiいれて 2026/1 から実行できるように」)
+ */
+async function runVerifyUnverifiedOnly() {
+  if (running.value || r2SyncLoading.value) return
+  r2SyncLoading.value = true
+  r2SyncMsg.value = ''
+  r2SyncResult.value = null
+  r2SyncPhase.value = 'fetch-pending'
+  try {
+    const fromMonth = from.value.slice(0, 7)
+    const toMonth = to.value.slice(0, 7)
+    const pendingUrl =
+      fromMonth && toMonth
+        ? `/api/uriage/r2-pending?from=${fromMonth}&to=${toMonth}`
+        : '/api/uriage/r2-pending'
+    r2SyncMsg.value = `[1/2] pending list 取得中… (${fromMonth} 〜 ${toMonth})`
+    const pendingRes = await $fetch<{ count: number; items: R2PendingItem[] }>(pendingUrl)
+    const unverified = pendingRes.items.filter((i) => i.blocker === 'unverified')
+    if (unverified.length === 0) {
+      r2SyncMsg.value = `[完了] 未検証 bucket なし (期間 ${fromMonth} 〜 ${toMonth})。状態サマリ再 load します…`
+      r2SyncPhase.value = 'done'
+      void loadStatusSummary()
+      return
+    }
+    r2SyncMsg.value = `[1/2] 未検証 ${unverified.length} bucket 検出 → verify 開始`
+
+    r2SyncPhase.value = 'verify'
+    const nextRunId = currentRunId.value + 1
+    currentRunId.value = nextRunId
+    const verifyJobs: VerifyJob[] = []
+    for (const item of unverified) {
+      const days = expandDates(`${item.month}-01`, lastDayOf(item.month))
+      for (const day of days) {
+        for (const cal of [true, false]) {
+          verifyJobs.push({
+            key: `${day}/${item.eigyosho_id}/${cal}#verify-only-run${nextRunId}`,
+            runId: nextRunId,
+            date: day,
+            officeId: item.eigyosho_id,
+            cal,
+            status: 'pending',
+          })
+        }
+      }
+    }
+    jobs.value = [...jobs.value, ...verifyJobs]
+    const startIdx = jobs.value.length - verifyJobs.length
+    const indices: number[] = []
+    for (let i = 0; i < verifyJobs.length; i++) indices.push(startIdx + i)
+    const conc = Math.min(16, Math.max(1, Math.floor(concurrency.value) || 1))
+    async function worker() {
+      while (indices.length > 0) {
+        const idx = indices.shift()
+        if (idx === undefined) break
+        const job = jobs.value[idx]
+        if (!job) break
+        await runOne(job)
+      }
+    }
+    const workers: Promise<void>[] = []
+    for (let i = 0; i < conc; i++) workers.push(worker())
+    await Promise.all(workers)
+    r2SyncPhase.value = 'done'
+    r2SyncMsg.value += `\n[2/2] verify 完了 (${verifyJobs.length} cells)。状態サマリ再 load します…`
+    void loadStatusSummary()
+  } catch (e: unknown) {
+    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
+    const dataMsg =
+      typeof err.data === 'string' ? err.data : err.data ? JSON.stringify(err.data) : ''
+    r2SyncMsg.value = `❌ verify 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
+    r2SyncPhase.value = 'idle'
+  } finally {
+    r2SyncLoading.value = false
+  }
+}
+
+// mount 時に状態サマリ全期間 を auto-load (user 2026-06-30: 「毎回選択するの面倒」)
+onMounted(() => {
+  void loadStatusSummary()
+})
 </script>
 
 <template>
@@ -807,10 +916,10 @@ if (!from.value || !to.value) setDefaultRange()
         <button
           :disabled="summaryLoading"
           class="bg-teal-600 text-white px-3 py-2 rounded text-sm hover:bg-teal-700 disabled:bg-gray-400"
-          @click="loadStatusSummary"
-          title="対象期間で recalc / 同期がどこまで進んでいるか確認 (recalc_jobs テーブル)"
+          @click="loadStatusSummary(true)"
+          title="UI 期間 (from/to) で recalc_jobs を絞って表示 (default は全期間)"
         >
-          {{ summaryLoading ? 'ロード中…' : '📊 状態サマリ' }}
+          {{ summaryLoading ? 'ロード中…' : '📊 期間でサマリを絞る' }}
         </button>
       </div>
 
@@ -838,14 +947,32 @@ if (!from.value || !to.value) setDefaultRange()
 
     <div v-if="summaryMsg || summaryJobs.length > 0" class="bg-white rounded-lg shadow p-4">
       <div class="text-sm font-semibold mb-2 flex items-center justify-between gap-2 flex-wrap">
-        <span>📊 recalc / R2 同期 状態サマリ</span>
-        <NuxtLink
-          to="/admin/recalc"
-          class="text-xs text-blue-600 hover:underline font-normal"
-          title="recalc / R2 同期を実行 (= 状態サマリの状態を更新)"
-        >
-          /admin/recalc を開く →
-        </NuxtLink>
+        <span>📊 recalc / R2 同期 状態サマリ (全期間・降順)</span>
+        <div class="flex items-center gap-3">
+          <button
+            :disabled="running || r2SyncLoading"
+            class="text-xs text-orange-700 border border-orange-300 hover:bg-orange-50 px-2 py-1 rounded font-normal disabled:opacity-50"
+            title="UI 期間 (from/to) で blocker='unverified' な bucket を verify (R2 同期はしない)"
+            @click="runVerifyUnverifiedOnly"
+          >
+            {{ r2SyncLoading ? '実行中…' : '🔍 未検証 bucket だけ verify' }}
+          </button>
+          <button
+            :disabled="summaryLoading"
+            class="text-xs text-teal-700 border border-teal-300 hover:bg-teal-50 px-2 py-1 rounded font-normal disabled:opacity-50"
+            title="サマリを再 load (= 最新の recalc_jobs を取得)"
+            @click="loadStatusSummary(false)"
+          >
+            {{ summaryLoading ? 'ロード中…' : '🔄 reload' }}
+          </button>
+          <NuxtLink
+            to="/admin/recalc"
+            class="text-xs text-blue-600 hover:underline font-normal"
+            title="recalc / R2 同期を実行 (= 状態サマリの状態を更新)"
+          >
+            /admin/recalc を開く →
+          </NuxtLink>
+        </div>
       </div>
       <div class="text-xs text-gray-600 mb-2">{{ summaryMsg }}</div>
       <div v-if="summaryJobs.length === 0 && !summaryLoading && summaryMsg" class="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-3 py-2">
