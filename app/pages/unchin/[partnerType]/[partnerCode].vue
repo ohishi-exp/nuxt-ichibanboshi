@@ -267,7 +267,7 @@ function printList() {
             運賃リスト — {{ partnerName || partnerCode }}
             <span class="text-sm text-gray-400">({{ partnerType === 'subcontractor' ? '傭車先' : '得意先' }})</span>
           </h1>
-          <NuxtLink to="/unchin" class="text-sm text-gray-700 border rounded px-3 py-1 hover:bg-gray-100">
+          <NuxtLink to="/unchin" class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100">
             ← 一覧へ戻る
           </NuxtLink>
         </div>
@@ -407,7 +407,7 @@ function printList() {
               {{ grouping ? '登録中…' : groupKind === 'exception' ? '例外として記録' : 'グルーピングを登録' }}
             </button>
             <button
-              class="text-xs text-gray-700 border rounded px-3 py-1 hover:bg-gray-100"
+              class="text-xs text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100"
               @click="selectedForGroup = new Set()"
             >
               選択解除

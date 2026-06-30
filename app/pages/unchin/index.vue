@@ -233,13 +233,13 @@ function fmtYen(n: number): string {
           <h1 class="text-xl font-bold">運賃リスト</h1>
           <NuxtLink
             to="/"
-            class="text-sm text-gray-700 border rounded px-3 py-1 hover:bg-gray-100 no-print"
+            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
           >
             ← トップへ戻る
           </NuxtLink>
           <NuxtLink
             to="/unchin/alias-items"
-            class="text-sm text-gray-700 border rounded px-3 py-1 hover:bg-gray-100 no-print"
+            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
           >
             品名グルーピング管理
           </NuxtLink>
