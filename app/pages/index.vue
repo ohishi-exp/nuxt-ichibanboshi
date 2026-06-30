@@ -125,12 +125,10 @@ const personMonthlyError = ref('')
 async function loadPersonMonthlyTotals() {
   personMonthlyError.value = ''
   try {
-    // SQLite に入っている全月を取りたいので、wide range で投げる。
-    // ページ全体の from/to (例: 2025-04〜2026-03 = 年度) では recalc 済 月
-    // (現状 editable_months = 2026-06,07) と被らずデータゼロになるため、
-    // chart は独自に「過去〜未来」相当の wide range で問い合わせる。
+    // ページ全体の期間 (from/to YYYY-MM) と連動。期間を変えて「更新」を押すと
+    // chart も再 fetch される。
     const res = await $fetch<PersonMonthlyTotalsResponse>(
-      `/api/uriage/person-monthly-totals?from=2000-01&to=2099-12&cal=true`,
+      `/api/uriage/person-monthly-totals?from=${from.value}&to=${to.value}&cal=true`,
     )
     personMonthlyRows.value = res.rows
   } catch (e: unknown) {
