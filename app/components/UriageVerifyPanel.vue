@@ -91,7 +91,12 @@ interface RecalcJobRow {
   fingerprint_after: string | null
   raw_path: string | null
   created_at: string
+  /** 最後に recalc が走った時刻 (fingerprint が変わったかどうかに関わらず更新) */
   computed_at: string | null
+  /** fingerprint が実際に変化した時刻 (= data が変わった時刻、rust-ichibanboshi#51 で追加)。
+   * `computed_at` だけ進んで `fingerprint_changed_at` が古いままなら
+   * 「最近 recalc 試したが data 不変」と読める。 */
+  fingerprint_changed_at?: string | null
   r2_synced_at: string | null
   last_error: string | null
   /** verify_jobs に存在する (date, cal) 行数 (LEFT JOIN COALESCE 0、rust-ichibanboshi#49) */
@@ -1133,7 +1138,7 @@ async function runR2SyncFromYear2026() {
             <th class="px-2 py-1 text-left">month</th>
             <th class="px-2 py-1 text-left">office</th>
             <th class="px-2 py-1 text-left">検証 (PHP vs Rust)</th>
-            <th class="px-2 py-1 text-left">computed_at</th>
+            <th class="px-2 py-1 text-left" title="fingerprint が実際に変化した時刻 (= data 最終更新)。computed_at だけ進んでここが古ければ「最近 recalc 試したが data 不変」を意味する">fingerprint_at</th>
             <th class="px-2 py-1 text-left">r2_synced_at</th>
             <th class="px-2 py-1 text-left">状態</th>
             <th class="px-2 py-1 text-left">操作</th>
@@ -1144,7 +1149,7 @@ async function runR2SyncFromYear2026() {
             <td class="px-2 py-1 font-mono">{{ j.month }}</td>
             <td class="px-2 py-1">{{ j.eigyosho_id }}</td>
             <td class="px-2 py-1" :class="verifyLabel(j).cls">{{ verifyLabel(j).text }}</td>
-            <td class="px-2 py-1 text-gray-500 text-xs">{{ j.computed_at ?? '-' }}</td>
+            <td class="px-2 py-1 text-gray-500 text-xs" :title="`computed_at (= 最終 recalc 試行): ${j.computed_at ?? '-'}`">{{ j.fingerprint_changed_at ?? j.computed_at ?? '-' }}</td>
             <td class="px-2 py-1 text-gray-500 text-xs">{{ j.r2_synced_at ?? '-' }}</td>
             <td class="px-2 py-1" :class="jobStatusLabel(j).cls">{{ jobStatusLabel(j).text }}</td>
             <td class="px-2 py-1 whitespace-nowrap">
