@@ -9,6 +9,7 @@
  */
 import { AuthToolbar } from '~/composables/useAuth'
 import UriagePersonRankingChart from '~/components/UriagePersonRankingChart.vue'
+import UriageVerifyPanel from '~/components/UriageVerifyPanel.vue'
 
 interface RecalcJob {
   month: string
@@ -520,6 +521,18 @@ function fmtYen(n: number): string {
         <div v-if="syncOnlyError" class="text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2 text-sm whitespace-pre-wrap">
           {{ syncOnlyError }}
         </div>
+      </div>
+
+      <div class="mt-6">
+        <div class="bg-white rounded-lg shadow p-4 mb-3">
+          <div class="font-semibold text-base">🔍 PHP vs Rust 検証</div>
+          <div class="text-xs text-gray-500 mt-1">
+            recalc が信頼できる前提として、PHP <code>/print-json</code> と Rust の
+            <code>compute_person_sum</code> が 1 円単位で一致しているか確認します
+            (専用ページ: <NuxtLink to="/admin/verify" class="text-blue-600 hover:underline">/admin/verify</NuxtLink>)。
+          </div>
+        </div>
+        <UriageVerifyPanel />
       </div>
 
       <div class="bg-white rounded-lg shadow p-4 mt-6 space-y-3 border-2 border-red-200">
