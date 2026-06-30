@@ -929,6 +929,98 @@ async function runVerifyUnverifiedOnly() {
   }
 }
 
+/**
+ * 「🔁 全 bucket 強制 verify (UI 期間)」ボタン用 orchestrator。
+ *
+ * 計算式 (Rust SQL or compute_person_sum) を変更した時の
+ * 「過去 OK/NG 含めて全 bucket を re-verify したい」用途
+ * (user 2026-06-30: 「計算式変えたので verify 強制実行したい」)。
+ *
+ * verify_jobs は (date, eigyosho, cal) を PK に upsert なので、過去結果は
+ * 新結果で上書きされる。
+ *
+ * 「未検証 bucket だけ verify」(runVerifyUnverifiedOnly) と違い:
+ * - r2_pending ではなく recalc-jobs を読む (= 既に R2 同期済 / 過去 verify 済 も対象)
+ * - status='failed' は recalc 自体が失敗しているので skip
+ * - blocker フィルタはしない (= 過去 OK 行も含めて再判定する)
+ *
+ * R2 同期 (verify-first) と違い R2 sync 段階は実行しない。verify_jobs を
+ * 更新するだけ。
+ */
+async function runForceVerifyAllBuckets() {
+  if (running.value || r2SyncLoading.value) return
+  r2SyncLoading.value = true
+  r2SyncMsg.value = ''
+  r2SyncResult.value = null
+  r2SyncPhase.value = 'fetch-pending'
+  try {
+    const fromMonth = from.value.slice(0, 7)
+    const toMonth = to.value.slice(0, 7)
+    const url =
+      fromMonth && toMonth
+        ? `/api/uriage/recalc-jobs?from=${fromMonth}&to=${toMonth}`
+        : '/api/uriage/recalc-jobs'
+    r2SyncMsg.value = `[1/2] recalc_jobs 取得中… (${fromMonth} 〜 ${toMonth})`
+    const res = await $fetch<RecalcJobsResponse>(url)
+    const targets = res.jobs.filter((j) => j.status !== 'failed')
+    if (targets.length === 0) {
+      r2SyncMsg.value = `[完了] 対象 bucket なし (期間 ${fromMonth} 〜 ${toMonth} に computed/r2_synced 行が無い)。先に /admin/recalc で再計算してください。`
+      r2SyncPhase.value = 'done'
+      void loadStatusSummary()
+      return
+    }
+    r2SyncMsg.value = `[1/2] ${targets.length} bucket 検出 → 強制 verify 開始 (過去 OK/NG も上書き)`
+
+    r2SyncPhase.value = 'verify'
+    const nextRunId = currentRunId.value + 1
+    currentRunId.value = nextRunId
+    const verifyJobs: VerifyJob[] = []
+    for (const item of targets) {
+      const days = expandDates(`${item.month}-01`, lastDayOf(item.month))
+      for (const day of days) {
+        for (const cal of [true, false]) {
+          verifyJobs.push({
+            key: `${day}/${item.eigyosho_id}/${cal}#force-verify-run${nextRunId}`,
+            runId: nextRunId,
+            date: day,
+            officeId: item.eigyosho_id,
+            cal,
+            status: 'pending',
+          })
+        }
+      }
+    }
+    jobs.value = [...jobs.value, ...verifyJobs]
+    const startIdx = jobs.value.length - verifyJobs.length
+    const indices: number[] = []
+    for (let i = 0; i < verifyJobs.length; i++) indices.push(startIdx + i)
+    const conc = Math.min(16, Math.max(1, Math.floor(concurrency.value) || 1))
+    async function worker() {
+      while (indices.length > 0) {
+        const idx = indices.shift()
+        if (idx === undefined) break
+        const job = jobs.value[idx]
+        if (!job) break
+        await runOne(job)
+      }
+    }
+    const workers: Promise<void>[] = []
+    for (let i = 0; i < conc; i++) workers.push(worker())
+    await Promise.all(workers)
+    r2SyncPhase.value = 'done'
+    r2SyncMsg.value += `\n[2/2] 強制 verify 完了 (${verifyJobs.length} cells)。状態サマリ再 load します…`
+    void loadStatusSummary()
+  } catch (e: unknown) {
+    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
+    const dataMsg =
+      typeof err.data === 'string' ? err.data : err.data ? JSON.stringify(err.data) : ''
+    r2SyncMsg.value = `❌ 強制 verify 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
+    r2SyncPhase.value = 'idle'
+  } finally {
+    r2SyncLoading.value = false
+  }
+}
+
 // mount 時に状態サマリ全期間 を auto-load (user 2026-06-30: 「毎回選択するの面倒」)
 onMounted(() => {
   void loadStatusSummary()
@@ -1285,6 +1377,14 @@ async function runR2SyncFromYear2026() {
             @click="runVerifyUnverifiedOnly"
           >
             {{ r2SyncLoading ? '実行中…' : '🔍 未検証 bucket だけ verify' }}
+          </button>
+          <button
+            :disabled="running || r2SyncLoading"
+            class="text-xs text-red-700 border border-red-300 hover:bg-red-50 px-2 py-1 rounded font-normal disabled:opacity-50"
+            title="UI 期間 (from/to) の全 bucket (status != failed) を verify (= 過去 OK/NG も上書き)。計算式 (Rust SQL or compute_person_sum) を変更した時に使う。"
+            @click="runForceVerifyAllBuckets"
+          >
+            {{ r2SyncLoading ? '実行中…' : '🔁 全 bucket 強制 verify (UI 期間)' }}
           </button>
           <button
             :disabled="summaryLoading"
