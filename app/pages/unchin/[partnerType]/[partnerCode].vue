@@ -244,7 +244,7 @@ function printList() {
             運賃リスト — {{ partnerName || partnerCode }}
             <span class="text-sm text-gray-400">({{ partnerType === 'subcontractor' ? '傭車先' : '得意先' }})</span>
           </h1>
-          <NuxtLink to="/unchin" class="text-sm text-blue-600 hover:underline">
+          <NuxtLink to="/unchin" class="text-sm text-gray-700 border rounded px-3 py-1 hover:bg-gray-100">
             ← 一覧へ戻る
           </NuxtLink>
         </div>
