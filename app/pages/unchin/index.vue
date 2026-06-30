@@ -109,10 +109,16 @@ function fmtYen(n: number): string {
       <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
         <div class="flex items-center gap-4">
           <h1 class="text-xl font-bold">運賃リスト</h1>
-          <NuxtLink to="/" class="text-sm text-blue-600 hover:underline no-print">
+          <NuxtLink
+            to="/"
+            class="text-sm text-gray-700 border rounded px-3 py-1 hover:bg-gray-100 no-print"
+          >
             ← トップへ戻る
           </NuxtLink>
-          <NuxtLink to="/unchin/alias-items" class="text-sm text-blue-600 hover:underline no-print">
+          <NuxtLink
+            to="/unchin/alias-items"
+            class="text-sm text-gray-700 border rounded px-3 py-1 hover:bg-gray-100 no-print"
+          >
             品名グルーピング管理
           </NuxtLink>
         </div>
