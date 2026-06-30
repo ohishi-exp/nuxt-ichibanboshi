@@ -20,12 +20,10 @@ interface SummaryResponse {
   data: PartnerSummary[]
 }
 
-type Kind = 'billing_only' | 'transport' | 'non_billing' | 'all'
+type Kind = 'with_billing_only' | 'with_non_billing'
 const KIND_OPTIONS: { value: Kind, label: string }[] = [
-  { value: 'transport', label: '請求 (請求K=0、default)' },
-  { value: 'billing_only', label: '請求のみ (請求K=1)' },
-  { value: 'non_billing', label: '非請求 (請求K=2)' },
-  { value: 'all', label: '全請求区分' },
+  { value: 'with_non_billing', label: '請求＋非請求 (請求K IN (0,2)、default)' },
+  { value: 'with_billing_only', label: '請求＋請求のみ (請求K IN (0,1))' },
 ]
 
 const loading = ref(true)
@@ -33,7 +31,7 @@ const error = ref('')
 const currentYear = new Date().getFullYear()
 const from = ref(`${currentYear}-01-01`)
 const to = ref(`${currentYear + 1}-01-01`)
-const kind = ref<Kind>('transport')
+const kind = ref<Kind>('with_non_billing')
 
 const customerSummary = ref<PartnerSummary[]>([])
 const subcontractorSummary = ref<PartnerSummary[]>([])

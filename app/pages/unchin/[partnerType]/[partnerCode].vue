@@ -16,6 +16,7 @@ interface UnchinGroup {
   count: number
 }
 interface CandidatesResponse {
+  source_table: string
   groups: UnchinGroup[]
 }
 interface VersionEntry {
@@ -32,6 +33,14 @@ interface VersionDetailResponse {
   items: UnchinGroup[]
 }
 
+type Kind = 'with_billing_only' | 'with_non_billing'
+const KIND_OPTIONS: { value: Kind, label: string }[] = [
+  { value: 'with_non_billing', label: '請求＋非請求 (請求K IN (0,2)、default)' },
+  { value: 'with_billing_only', label: '請求＋請求のみ (請求K IN (0,1))' },
+]
+/** バージョン未登録時・最新の候補を確認したい時に選ぶ擬似バージョン値。 */
+const LIVE_VERSION = '__live__'
+
 const route = useRoute()
 const partnerType = computed(() => (route.params.partnerType === 'subcontractor' ? 'subcontractor' : 'customer'))
 const partnerCode = computed(() => decodeURIComponent(String(route.params.partnerCode ?? '')))
@@ -39,28 +48,43 @@ const partnerCode = computed(() => decodeURIComponent(String(route.params.partne
 const loading = ref(true)
 const error = ref('')
 const versions = ref<VersionEntry[]>([])
-const selectedVersionId = ref('')
+const selectedVersionId = ref(LIVE_VERSION)
 const items = ref<UnchinGroup[]>([])
 const partnerName = ref('')
+const liveSource = ref('')
 
 const currentYear = new Date().getFullYear()
 const candidateFrom = ref(`${currentYear}-01-01`)
 const candidateTo = ref(`${currentYear + 1}-01-01`)
+const kind = ref<Kind>('with_non_billing')
 const registering = ref(false)
 const effectiveFrom = ref(new Date().toISOString().slice(0, 10))
 const registerMsg = ref('')
+
+/**
+ * ライブ候補 (rust から都度抽出してグルーピングしたもの) を取得し、このページの
+ * partner_code に絞り込む。バージョン未登録の取引先でもページに何か表示される
+ * ようにするための fallback (Refs ohishi-exp/rust-ichibanboshi#57)。
+ */
+async function loadLiveCandidates() {
+  const params = new URLSearchParams({
+    from: candidateFrom.value,
+    to: candidateTo.value,
+    partner_type: partnerType.value,
+    kind: kind.value,
+  })
+  const res = await $fetch<CandidatesResponse>(`/api/unchin/candidates?${params.toString()}`)
+  liveSource.value = res.source_table
+  const mine = res.groups.filter(g => g.partner_code === partnerCode.value)
+  items.value = mine
+  if (mine.length > 0) partnerName.value = mine[0].partner_name
+}
 
 async function loadVersions() {
   const res = await $fetch<VersionsResponse>(
     `/api/unchin/versions?partner_type=${partnerType.value}&partner_code=${encodeURIComponent(partnerCode.value)}`,
   )
   versions.value = res.versions
-  if (versions.value.length > 0) {
-    selectedVersionId.value = versions.value[0].version_id
-    await loadVersionDetail(selectedVersionId.value)
-  } else {
-    items.value = []
-  }
 }
 
 async function loadVersionDetail(versionId: string) {
@@ -77,6 +101,13 @@ async function load() {
   error.value = ''
   try {
     await loadVersions()
+    // 登録済みバージョンがあれば最新を初期表示、無ければライブ候補を表示する
+    selectedVersionId.value = versions.value.length > 0 ? versions.value[0].version_id : LIVE_VERSION
+    if (selectedVersionId.value === LIVE_VERSION) {
+      await loadLiveCandidates()
+    } else {
+      await loadVersionDetail(selectedVersionId.value)
+    }
   } catch (e: unknown) {
     const err = e as { statusCode?: number, statusMessage?: string }
     error.value = `読み込みに失敗しました: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
@@ -87,8 +118,13 @@ async function load() {
 
 onMounted(load)
 
-watch(selectedVersionId, (v) => {
-  if (v) void loadVersionDetail(v)
+watch(selectedVersionId, async (v) => {
+  if (!v) return
+  if (v === LIVE_VERSION) {
+    await loadLiveCandidates()
+  } else {
+    await loadVersionDetail(v)
+  }
 })
 
 async function fetchCandidatesAndRegister() {
@@ -99,6 +135,7 @@ async function fetchCandidatesAndRegister() {
       from: candidateFrom.value,
       to: candidateTo.value,
       partner_type: partnerType.value,
+      kind: kind.value,
     })
     const res = await $fetch<CandidatesResponse>(`/api/unchin/candidates?${params.toString()}`)
     const mine = res.groups.filter(g => g.partner_code === partnerCode.value)
@@ -117,6 +154,7 @@ async function fetchCandidatesAndRegister() {
     })
     registerMsg.value = `✅ ${saved.version_id} として登録しました（登録者: ${saved.registered_by}）`
     await loadVersions()
+    selectedVersionId.value = saved.version_id
   } catch (e: unknown) {
     const err = e as { statusCode?: number, statusMessage?: string }
     registerMsg.value = `❌ エラー: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
@@ -154,14 +192,27 @@ function printList() {
       <div v-if="loading" class="text-center py-20 text-gray-500">読み込み中...</div>
       <div v-else-if="error" class="text-center py-20 text-red-600">{{ error }}</div>
       <template v-else>
-        <div class="bg-white rounded-lg shadow p-4 mb-4 flex items-center gap-3 flex-wrap no-print">
-          <label class="text-sm font-medium">バージョン:</label>
-          <select v-model="selectedVersionId" class="border rounded px-2 py-1 text-sm">
-            <option v-for="v in versions" :key="v.version_id" :value="v.version_id">
-              {{ v.effective_from }} 〜（{{ v.registered_by }} 登録、{{ v.item_count }}件）
-            </option>
-          </select>
-          <span v-if="versions.length === 0" class="text-sm text-gray-400">登録済みバージョンがありません</span>
+        <div class="bg-white rounded-lg shadow p-4 mb-4 flex items-end gap-3 flex-wrap no-print">
+          <div>
+            <label class="block text-xs text-gray-500">バージョン</label>
+            <select v-model="selectedVersionId" class="border rounded px-2 py-1 text-sm">
+              <option :value="LIVE_VERSION">
+                🔴 ライブ候補（未登録・最新の運転日報明細から都度抽出）
+              </option>
+              <option v-for="v in versions" :key="v.version_id" :value="v.version_id">
+                {{ v.effective_from }} 〜（{{ v.registered_by }} 登録、{{ v.item_count }}件）
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500">請求区分</label>
+            <select v-model="kind" class="border rounded px-2 py-1 text-sm" @change="selectedVersionId === LIVE_VERSION && loadLiveCandidates()">
+              <option v-for="o in KIND_OPTIONS" :key="o.value" :value="o.value">
+                {{ o.label }}
+              </option>
+            </select>
+          </div>
+          <span v-if="versions.length === 0" class="text-sm text-gray-400">登録済みバージョンはまだありません</span>
           <button class="ml-auto bg-gray-700 text-white px-4 py-1 rounded text-sm hover:bg-gray-800" @click="printList">
             🖨 一括印刷 (PDF)
           </button>
@@ -171,6 +222,9 @@ function printList() {
           <h2 class="font-bold text-base mb-3">
             {{ partnerName || partnerCode }} 運賃リスト
           </h2>
+          <p v-if="selectedVersionId === LIVE_VERSION" class="text-xs text-gray-400 mb-2">
+            {{ liveSource || 'ライブ候補（未登録）' }} — 期間: {{ candidateFrom }} 〜 {{ candidateTo }}
+          </p>
           <table class="w-full text-sm">
             <thead class="border-b text-gray-500">
               <tr>
@@ -194,7 +248,9 @@ function printList() {
                 </td>
               </tr>
               <tr v-if="items.length === 0">
-                <td colspan="3" class="py-6 text-center text-gray-400">バージョンを選択してください</td>
+                <td colspan="3" class="py-6 text-center text-gray-400">
+                  該当期間に運賃データがありません（期間・請求区分を変更してみてください）
+                </td>
               </tr>
             </tbody>
           </table>
