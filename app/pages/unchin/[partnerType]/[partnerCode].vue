@@ -258,17 +258,62 @@ function printList() {
 }
 
 /**
- * 期間列の表示改善: 既定は年月までに短縮し、ホバー (title 属性) でフルの日付範囲を
- * 出す。行が多いと YYYY-MM-DD の縦並びが冗長で見づらいため (#57 follow-up)。
+ * 期間列の表示設計 (#57 follow-up)。
+ *
+ * 値上げ検討で本当に知りたいのは「YYYY-MM-DD の生日付」ではなく
+ * 「この運賃は今も生きているか／いつ頃の話か／どれくらい続いたか」。
+ * そのため単純な日付短縮ではなく、判断に直結する3要素を出す:
+ *   1. 直近性 (●直近 = 過去30日以内に取引あり) — 今も適用中かの一目判定
+ *   2. 年月レンジ (同年なら年を1回に畳む、同月なら単月表示) — 可読性
+ *   3. 継続期間 (◯ヶ月) — どれだけ定着した価格かの目安
+ * フルの YYYY-MM-DD はホバー (title) で必要な時だけ出す。
  */
-function toMonth(ymd: string | undefined): string {
-  return ymd ? ymd.slice(0, 7) : '?'
+const RECENT_WINDOW_DAYS = 30
+
+function parseYmd(ymd: string | undefined): Date | null {
+  if (!ymd) return null
+  const [y, m, d] = ymd.split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d)
 }
+
+/** 過去 {@link RECENT_WINDOW_DAYS} 日以内に取引があれば「今も適用中」とみなす。 */
+function isRecent(maxDate: string | undefined): boolean {
+  const d = parseYmd(maxDate)
+  if (!d) return false
+  const diffDays = (Date.now() - d.getTime()) / 86_400_000
+  return diffDays >= 0 && diffDays <= RECENT_WINDOW_DAYS
+}
+
+function formatYearMonth(ymd: string): { year: string, month: number } {
+  const [y, m] = ymd.split('-')
+  return { year: y, month: Number(m) }
+}
+
+/** 年月レンジを「同年は年を1回だけ」「同月は単月」に畳んで表示する。 */
 function periodLabel(minDate: string | undefined, maxDate: string | undefined): string {
-  const minM = toMonth(minDate)
-  const maxM = toMonth(maxDate)
-  return minM === maxM ? minM : `${minM} 〜 ${maxM}`
+  if (!minDate || !maxDate) return '?'
+  if (minDate === maxDate) {
+    const { year, month } = formatYearMonth(minDate)
+    return `${year}年${month}月`
+  }
+  const min = formatYearMonth(minDate)
+  const max = formatYearMonth(maxDate)
+  if (min.year === max.year) {
+    return min.month === max.month ? `${min.year}年${min.month}月` : `${min.year}年${min.month}〜${max.month}月`
+  }
+  return `${min.year}年${min.month}月〜${max.year}年${max.month}月`
 }
+
+/** 継続期間 (月数換算)。1ヶ月未満・単発取引は表示しない (ノイズになるため)。 */
+function durationLabel(minDate: string | undefined, maxDate: string | undefined): string {
+  const min = parseYmd(minDate)
+  const max = parseYmd(maxDate)
+  if (!min || !max || minDate === maxDate) return ''
+  const months = (max.getFullYear() - min.getFullYear()) * 12 + (max.getMonth() - min.getMonth())
+  return months >= 1 ? `${months}ヶ月` : ''
+}
+
 function periodTitle(minDate: string | undefined, maxDate: string | undefined): string {
   return minDate === maxDate ? (minDate ?? '') : `${minDate ?? '?'} 〜 ${maxDate ?? '?'}`
 }
@@ -344,7 +389,10 @@ function periodTitle(minDate: string | undefined, maxDate: string | undefined): 
                 <th class="text-left py-1 no-print">品名C</th>
                 <th class="text-right py-1">運賃</th>
                 <th class="text-right py-1 no-print">件数</th>
-                <th class="text-left py-1 no-print">期間</th>
+                <th class="text-left py-1 no-print">
+                  期間
+                  <span class="text-gray-400 font-normal">(●直近{{ RECENT_WINDOW_DAYS }}日)</span>
+                </th>
                 <th class="text-left py-1">積地・卸地</th>
               </tr>
             </thead>
@@ -363,11 +411,22 @@ function periodTitle(minDate: string | undefined, maxDate: string | undefined): 
                 <td class="py-1 text-right font-semibold">{{ fmtYen(it.fare) }}</td>
                 <td class="py-1 text-right no-print">{{ it.count ?? '?' }}</td>
                 <td
-                  class="py-1 text-xs text-gray-400 no-print cursor-help"
+                  class="py-1 text-xs no-print cursor-help"
                   :title="periodTitle(it.min_date, it.max_date)"
                 >
                   <template v-if="it.min_date || it.max_date">
-                    {{ periodLabel(it.min_date, it.max_date) }}
+                    <div class="flex items-center gap-1">
+                      <span
+                        v-if="isRecent(it.max_date)"
+                        class="inline-block w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"
+                      />
+                      <span :class="isRecent(it.max_date) ? 'text-gray-700 font-medium' : 'text-gray-400'">
+                        {{ periodLabel(it.min_date, it.max_date) }}
+                      </span>
+                    </div>
+                    <div v-if="durationLabel(it.min_date, it.max_date)" class="text-gray-400">
+                      {{ durationLabel(it.min_date, it.max_date) }}継続
+                    </div>
                   </template>
                 </td>
                 <td class="py-1">
