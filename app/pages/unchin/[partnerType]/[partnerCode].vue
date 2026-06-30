@@ -116,8 +116,12 @@ async function createGroupFromSelection() {
   groupMsg.value = ''
   try {
     const itemCodes = Array.from(selectedDistinctItemCodes.value)
-    if (!groupLabel.value.trim() || itemCodes.length < 2) {
-      groupMsg.value = '表示名と、異なる品名コードを2件以上選択してください（同じ品名コードの行を複数選んでも1件として扱われます）'
+    if (!groupLabel.value.trim()) {
+      groupMsg.value = '⚠ 表示名を入力してください'
+      return
+    }
+    if (itemCodes.length < 2) {
+      groupMsg.value = '⚠ 異なる品名コードを2件以上選択してください（同じ品名コードの行を複数選んでも1件として扱われます）'
       return
     }
     await $fetch('/api/unchin/alias/items', {
@@ -478,7 +482,7 @@ function periodTitle(minDate: string | undefined, maxDate: string | undefined): 
               選択中: {{ selectedForGroup.size }} 行 (異なる品名コード {{ selectedDistinctItemCodes.size }} 種)
             </span>
             <button
-              :disabled="grouping"
+              :disabled="grouping || !groupLabel.trim() || selectedDistinctItemCodes.size < 2"
               class="bg-orange-600 text-white px-4 py-1 rounded text-sm hover:bg-orange-700 disabled:bg-gray-400"
               @click="createGroupFromSelection"
             >

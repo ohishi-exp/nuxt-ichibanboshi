@@ -92,8 +92,12 @@ async function createGroup() {
   saving.value = true
   saveMsg.value = ''
   try {
-    if (!newLabel.value.trim() || selectedCodes.value.length < 2) {
-      saveMsg.value = '表示名と品名コード (2件以上) を選択してください'
+    if (!newLabel.value.trim()) {
+      saveMsg.value = '⚠ 表示名を入力してください'
+      return
+    }
+    if (selectedCodes.value.length < 2) {
+      saveMsg.value = '⚠ 品名コードを2件以上選択してください'
       return
     }
     await $fetch('/api/unchin/alias/items', {
@@ -190,7 +194,7 @@ async function deleteGroup(groupId: string) {
           </div>
           <p class="text-xs text-gray-500 mb-2">選択中: {{ selectedCodes.length }} 件</p>
           <button
-            :disabled="saving"
+            :disabled="saving || !newLabel.trim() || selectedCodes.length < 2"
             class="bg-orange-600 text-white px-4 py-1 rounded text-sm hover:bg-orange-700 disabled:bg-gray-400"
             @click="createGroup"
           >
