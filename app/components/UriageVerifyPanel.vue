@@ -107,6 +107,12 @@ const progress = computed(() => {
 const ngJobs = computed(() => jobs.value.filter((j) => j.status === 'ng'))
 const errJobs = computed(() => jobs.value.filter((j) => j.status === 'err'))
 
+/** 現在 run で最近 ERR になった 1 件 (進捗バー直下に出して即原因把握できるように) */
+const latestRunErr = computed(() => {
+  const errs = currentRunJobs.value.filter((j) => j.status === 'err')
+  return errs.length > 0 ? errs[errs.length - 1] : null
+})
+
 interface RunSummary {
   runId: number
   range: string // "from 〜 to" (run の最小日〜最大日)
@@ -192,25 +198,42 @@ function expandJobs(runId: number): VerifyJob[] {
   return result
 }
 
+/** 1 fetch あたりのタイムアウト (ms)。長すぎると stuck 検出が遅れ、短すぎると
+ * CakePHP 経由の遅い日付で空振りする。30 秒に。 */
+const FETCH_TIMEOUT_MS = 30_000
+
 async function runOne(job: VerifyJob): Promise<void> {
   job.status = 'running'
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
     const res = await $fetch<VerifyResponse>(
       `/api/uriage/verify?id=${job.officeId}&date=${job.date}&cal=${job.cal}`,
+      { signal: controller.signal },
     )
     job.response = res
     job.status = res.ok ? 'ok' : 'ng'
   } catch (e: unknown) {
-    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
+    const err = e as {
+      statusCode?: number
+      statusMessage?: string
+      data?: unknown
+      name?: string
+    }
     if (err.statusCode === 404) {
       job.status = 'skipped'
       job.error = `(office_id=${job.officeId} は masters に居ない)`
+    } else if (err.name === 'AbortError') {
+      job.status = 'err'
+      job.error = `timeout ${FETCH_TIMEOUT_MS / 1000}s (rust 側が応答しない可能性)`
     } else {
       job.status = 'err'
       const dataMsg =
         typeof err.data === 'string' ? err.data : err.data ? JSON.stringify(err.data) : ''
       job.error = `${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
     }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -224,20 +247,34 @@ async function runAll() {
   }
   currentRunId.value = nextRunId
   // 過去 run は履歴として残し、新しい run を末尾に append
+  const startIdx = jobs.value.length
   jobs.value = [...jobs.value, ...expanded]
   running.value = true
   expandedKey.value = null
 
-  const queue = expanded.slice()
+  // ★ workers が mutate する対象は **jobs.value[idx] 経由の proxied item** に
+  //   する必要がある。plain object (expanded[i]) を直接 mutate すると Vue 3
+  //   の reactive proxy を通らないため、`job.status = 'ok'` をしても画面の
+  //   進捗カウントが更新されず「0/930 のまま動かない」状態になる
+  //   (Vue 3 reactivity の罠、user 報告 2026-06-30)。
+  const indices: number[] = []
+  for (let i = 0; i < expanded.length; i++) indices.push(startIdx + i)
+
   async function worker() {
-    while (queue.length > 0) {
-      const job = queue.shift()
+    while (indices.length > 0) {
+      const idx = indices.shift()
+      if (idx === undefined) break
+      const job = jobs.value[idx]
       if (!job) break
       await runOne(job)
     }
   }
+  // concurrency が NaN / 0 / 負だと worker が 1 つも起動せず progress が
+  // 永遠に動かないので最低 1 にフロアする。上限は 16 (Workers 同時接続 6 を
+  // 大きく上回ると無駄)。
+  const conc = Math.min(16, Math.max(1, Math.floor(concurrency.value) || 1))
   const workers: Promise<void>[] = []
-  for (let i = 0; i < concurrency.value; i++) {
+  for (let i = 0; i < conc; i++) {
     workers.push(worker())
   }
   await Promise.all(workers)
@@ -245,9 +282,14 @@ async function runAll() {
 }
 
 function stop() {
-  // 現在 run の pending のみ skip (過去 run はもう触らない)
-  for (const j of currentRunJobs.value) {
-    if (j.status === 'pending') j.status = 'skipped'
+  // 現在 run の pending のみ skip (過去 run はもう触らない)。proxied item を
+  // mutate するため jobs.value 経由でアクセスする (currentRunJobs computed の
+  // フィルタ結果も proxied のはずだが、念のため明示的に jobs.value から)。
+  for (let i = 0; i < jobs.value.length; i++) {
+    const j = jobs.value[i]
+    if (j && j.runId === currentRunId.value && j.status === 'pending') {
+      j.status = 'skipped'
+    }
   }
   running.value = false
 }
@@ -412,6 +454,11 @@ if (!from.value || !to.value) setDefaultRange()
       </div>
       <div class="w-full bg-gray-200 rounded h-2 overflow-hidden">
         <div class="bg-blue-500 h-2 transition-all" :style="{ width: progress + '%' }"></div>
+      </div>
+      <div v-if="latestRunErr" class="text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1">
+        最新 ERR: #{{ latestRunErr.runId }} {{ latestRunErr.date }} /
+        office={{ latestRunErr.officeId }} / cal={{ latestRunErr.cal }}:
+        <strong>{{ latestRunErr.error }}</strong>
       </div>
     </div>
 
