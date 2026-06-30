@@ -1224,6 +1224,30 @@ async function runR2SyncFromYear2026() {
         </div>
       </div>
       <div class="text-xs text-gray-600 mb-2">{{ summaryMsg }}</div>
+
+      <!-- r2SyncMsg をここでもミラー表示 (user 2026-06-30 「2026-01〜今日 R2 一括同期
+           が機能してない」: 実際は機能しているが上の方の panel で message が出るので
+           summary 内でボタン押した時に見えない問題への対処)。inline progress も同居。 -->
+      <div
+        v-if="r2SyncMsg && r2SyncLoading"
+        class="text-sm whitespace-pre-wrap text-purple-800 bg-purple-50 border border-purple-200 rounded px-3 py-2 mb-2 space-y-2"
+      >
+        <div>🚀 {{ r2SyncMsg }}</div>
+        <div v-if="counts.total > 0" class="text-xs text-purple-900">
+          <div class="mb-1">
+            進捗: <strong>{{ counts.done }} / {{ counts.total }}</strong>
+            ({{ progress }} %) —
+            <span class="text-green-700">OK={{ counts.ok }}</span>
+            <span class="ml-1 text-red-700">NG={{ counts.ng }}</span>
+            <span class="ml-1 text-orange-700">ERR={{ counts.err }}</span>
+            <span class="ml-1 text-gray-600">skipped={{ counts.skipped }}</span>
+          </div>
+          <div class="w-full bg-purple-200 rounded h-1.5 overflow-hidden">
+            <div class="bg-purple-600 h-1.5 transition-all" :style="{ width: progress + '%' }"></div>
+          </div>
+        </div>
+      </div>
+
       <div v-if="summaryJobs.length === 0 && !summaryLoading && summaryMsg" class="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-3 py-2">
         対象期間に recalc_jobs が 1 件もありません → recalc が未実行です。
         <NuxtLink to="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</NuxtLink>
