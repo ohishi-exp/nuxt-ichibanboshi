@@ -252,6 +252,19 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
       </div>
 
       <div v-else class="space-y-6">
+        <div class="print-section print-chart">
+          <div v-if="personMonthlyError" class="bg-white rounded-lg shadow p-4 mb-2 text-sm text-red-700">
+            担当者順位推移 endpoint エラー: {{ personMonthlyError }}
+            <div class="text-xs text-gray-500 mt-1">
+              rust-ichiban への接続もしくは認証 (CF Access Service Token) を確認
+            </div>
+          </div>
+          <UriagePersonBumpChart :rows="personMonthlyRows" />
+          <div v-if="personMonthlyRows.length === 0 && !personMonthlyError" class="text-xs text-gray-500 mt-1 text-right">
+            データがあれば自動表示されます。<a href="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</a> で再計算を実行してください。
+          </div>
+        </div>
+
         <div>
           <div class="flex justify-end items-center gap-2 mb-1">
             <label class="text-xs text-gray-600">営業所:</label>
@@ -358,19 +371,6 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
 
         <div class="print-section print-chart">
           <CustomerBumpChart :data="customerTrend" :source-table="trendSource" />
-        </div>
-
-        <div class="print-section print-chart">
-          <div v-if="personMonthlyError" class="bg-white rounded-lg shadow p-4 mb-2 text-sm text-red-700">
-            担当者順位推移 endpoint エラー: {{ personMonthlyError }}
-            <div class="text-xs text-gray-500 mt-1">
-              rust-ichiban への接続もしくは認証 (CF Access Service Token) を確認
-            </div>
-          </div>
-          <UriagePersonBumpChart :rows="personMonthlyRows" />
-          <div v-if="personMonthlyRows.length === 0 && !personMonthlyError" class="text-xs text-gray-500 mt-1 text-right">
-            データがあれば自動表示されます。<a href="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</a> で再計算を実行してください。
-          </div>
         </div>
 
         <div class="print-section print-chart">
