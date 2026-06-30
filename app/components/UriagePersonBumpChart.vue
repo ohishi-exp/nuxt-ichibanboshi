@@ -17,11 +17,27 @@ interface MonthlyTotal {
   kingaku: number
   yosha_kingaku: number
   kensuu: number
+  /** 横横=0 (自社運行+sql_from_other) のみの集計値。
+   * backend が省略 (旧 data) する場合あり → undefined fallback で 0 扱い。 */
+  kingaku_y0?: number
+  yosha_kingaku_y0?: number
+  kensuu_y0?: number
 }
 
-const props = defineProps<{
-  rows: MonthlyTotal[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    rows: MonthlyTotal[]
+    /** true で横横=1 (他社運行委託) を除外した y0 値で集計する。
+     * default false (= 合計、PHP 互換 view) */
+    excludeYokoyoko?: boolean
+  }>(),
+  { excludeYokoyoko: false },
+)
+
+/** 横横除外フィルタを考慮した kingaku 取得 */
+function pickKingaku(r: MonthlyTotal): number {
+  return props.excludeYokoyoko ? (r.kingaku_y0 ?? 0) : r.kingaku
+}
 
 const TOP_N = 15
 
@@ -46,11 +62,12 @@ const chartData = computed<ChartData>(() => {
   const months = Array.from(monthsSet).sort()
 
   // 月 → person → kingaku の Map (集計済み前提だが念のため SUM)
+  // excludeYokoyoko=true なら kingaku_y0 (横横=0 のみ) を使う
   const byMonth = new Map<string, Map<string, number>>()
   for (const r of props.rows) {
     if (!byMonth.has(r.month)) byMonth.set(r.month, new Map())
     const m = byMonth.get(r.month)!
-    m.set(r.person_name, (m.get(r.person_name) ?? 0) + r.kingaku)
+    m.set(r.person_name, (m.get(r.person_name) ?? 0) + pickKingaku(r))
   }
 
   // 月ごとに rank 計算 (kingaku DESC)。同額は名前順で安定 sort
@@ -68,7 +85,7 @@ const chartData = computed<ChartData>(() => {
   // 期間合計で top N を決める
   const totals = new Map<string, number>()
   for (const r of props.rows) {
-    totals.set(r.person_name, (totals.get(r.person_name) ?? 0) + r.kingaku)
+    totals.set(r.person_name, (totals.get(r.person_name) ?? 0) + pickKingaku(r))
   }
   const topPersons = Array.from(totals.entries())
     .filter(([_, v]) => v > 0)
@@ -105,7 +122,7 @@ const option = computed(() => {
 
   return {
     title: {
-      text: `担当者 売上順位推移 (期間合計 上位 ${d.series.length} 名)`,
+      text: `担当者 売上順位推移 (期間合計 上位 ${d.series.length} 名)${props.excludeYokoyoko ? ' [横横除外]' : ''}`,
       left: 'center',
     },
     tooltip: {

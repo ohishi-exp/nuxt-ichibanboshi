@@ -102,7 +102,7 @@ onMounted(async () => {
   await Promise.all([loadData(), loadTopRanking(), loadPersonMonthlyTotals()])
 })
 
-// ── 担当者順位推移 chart (rust uriage_person_daily 由来、Refs #762) ──
+// ── 担当者順位推移 / 構成順位 / 構成推移 (rust uriage_person_daily 由来、Refs #762) ──
 interface PersonMonthlyTotalRow {
   month: string
   person_name: string
@@ -111,6 +111,11 @@ interface PersonMonthlyTotalRow {
   kingaku: number
   yosha_kingaku: number
   kensuu: number
+  /** 横横=0 (= 自社運行 or sql_from_other) のみの集計値 (横横除外フィルタ用)。
+   * backend が省略する場合あり (旧 data) → undefined fallback で 0 扱い。 */
+  kingaku_y0?: number
+  yosha_kingaku_y0?: number
+  kensuu_y0?: number
   calculated_at: string
 }
 interface PersonMonthlyTotalsResponse {
@@ -121,6 +126,10 @@ interface PersonMonthlyTotalsResponse {
 }
 const personMonthlyRows = ref<PersonMonthlyTotalRow[]>([])
 const personMonthlyError = ref('')
+/** 横横除外フィルタ (true = 自社運行のみ、false = 全部) */
+const excludeYokoyoko = ref(false)
+/** 期間ラベル (構成順位 表のキャプション用) */
+const periodLabel = computed(() => `${from.value} 〜 ${to.value}`)
 
 async function loadPersonMonthlyTotals() {
   personMonthlyError.value = ''
@@ -266,9 +275,29 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
               rust-ichiban への接続もしくは認証 (CF Access Service Token) を確認
             </div>
           </div>
-          <UriagePersonBumpChart :rows="personMonthlyRows" />
+          <!-- 横横除外フィルタ toggle: 3 つの担当者 chart/table を一括切替 -->
+          <div class="bg-white rounded-lg shadow px-4 py-2 mb-2 flex items-center justify-end gap-2 no-print">
+            <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
+              <input v-model="excludeYokoyoko" type="checkbox" class="rounded" />
+              横横除外 (= 自社運行のみ、他社運行委託 [受注∈ AND 稼動∉] を除外)
+            </label>
+          </div>
+          <UriagePersonBumpChart :rows="personMonthlyRows" :exclude-yokoyoko="excludeYokoyoko" />
           <div v-if="personMonthlyRows.length === 0 && !personMonthlyError" class="text-xs text-gray-500 mt-1 text-right">
             データがあれば自動表示されます。<a href="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</a> で再計算を実行してください。
+          </div>
+        </div>
+
+        <!-- 担当者 売上構成順位 (期間合計 table) + 売上構成推移 (% trend chart)。
+             横横除外 toggle と連動。user 2026-06-30 要望。 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <UriagePersonShareRanking
+            :rows="personMonthlyRows"
+            :exclude-yokoyoko="excludeYokoyoko"
+            :period-label="periodLabel"
+          />
+          <div class="print-section print-chart">
+            <UriagePersonShareTrendChart :rows="personMonthlyRows" :exclude-yokoyoko="excludeYokoyoko" />
           </div>
         </div>
 
