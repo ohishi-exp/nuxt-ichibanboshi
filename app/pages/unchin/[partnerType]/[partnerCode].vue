@@ -14,6 +14,8 @@ interface UnchinGroup {
   fare: number
   routes: RoutePair[]
   count: number
+  min_date?: string
+  max_date?: string
 }
 interface CandidatesResponse {
   source_table: string
@@ -44,6 +46,20 @@ const LIVE_VERSION = '__live__'
 const route = useRoute()
 const partnerType = computed(() => (route.params.partnerType === 'subcontractor' ? 'subcontractor' : 'customer'))
 const partnerCode = computed(() => decodeURIComponent(String(route.params.partnerCode ?? '')))
+/**
+ * 一覧ページで「得意先コードでまとめる」opt-in がかかっていた場合、`partnerCode` は
+ * 得意先C (得意先H 無視) を表す。その場合は完全一致ではなく `partnerBaseCode` 一致で
+ * 候補を絞り込む (#57 確定事項、自動マージはしない・opt-in 時のみ)。
+ */
+const groupByCode = computed(() => route.query.groupByCode === '1')
+
+function partnerBaseCode(code: string): string {
+  const idx = code.indexOf('-')
+  return idx === -1 ? code : code.slice(0, idx)
+}
+function matchesPartner(code: string): boolean {
+  return groupByCode.value ? partnerBaseCode(code) === partnerCode.value : code === partnerCode.value
+}
 
 const loading = ref(true)
 const error = ref('')
@@ -75,7 +91,7 @@ async function loadLiveCandidates() {
   })
   const res = await $fetch<CandidatesResponse>(`/api/unchin/candidates?${params.toString()}`)
   liveSource.value = res.source_table
-  const mine = res.groups.filter(g => g.partner_code === partnerCode.value)
+  const mine = res.groups.filter(g => matchesPartner(g.partner_code))
   items.value = mine
   if (mine.length > 0) partnerName.value = mine[0].partner_name
 }
@@ -138,7 +154,7 @@ async function fetchCandidatesAndRegister() {
       kind: kind.value,
     })
     const res = await $fetch<CandidatesResponse>(`/api/unchin/candidates?${params.toString()}`)
-    const mine = res.groups.filter(g => g.partner_code === partnerCode.value)
+    const mine = res.groups.filter(g => matchesPartner(g.partner_code))
     if (mine.length === 0) {
       registerMsg.value = '該当期間に候補データがありません'
       return
@@ -225,18 +241,32 @@ function printList() {
           <p v-if="selectedVersionId === LIVE_VERSION" class="text-xs text-gray-400 mb-2">
             {{ liveSource || 'ライブ候補（未登録）' }} — 期間: {{ candidateFrom }} 〜 {{ candidateTo }}
           </p>
+          <p v-if="groupByCode" class="text-xs text-orange-600 mb-2 no-print">
+            ⚠ 得意先コードでまとめ表示中（支店違いを合算、opt-in）。同一品目・同一運賃でも
+            得意先H違いで品名コードが分かれている場合があります。
+          </p>
           <table class="w-full text-sm">
             <thead class="border-b text-gray-500">
               <tr>
                 <th class="text-left py-1">品目</th>
+                <th class="text-left py-1 no-print">品名C</th>
                 <th class="text-right py-1">運賃</th>
+                <th class="text-right py-1 no-print">件数</th>
+                <th class="text-left py-1 no-print">期間</th>
                 <th class="text-left py-1">積地・卸地</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(it, i) in items" :key="i" class="border-b border-gray-100">
                 <td class="py-1">{{ it.item_name || it.item_code || '(品目未設定)' }}</td>
+                <td class="py-1 text-xs text-gray-400 no-print">{{ it.item_code || '?' }}</td>
                 <td class="py-1 text-right font-semibold">{{ fmtYen(it.fare) }}</td>
+                <td class="py-1 text-right no-print">{{ it.count ?? '?' }}</td>
+                <td class="py-1 text-xs text-gray-400 no-print">
+                  <template v-if="it.min_date || it.max_date">
+                    {{ it.min_date }} 〜 {{ it.max_date }}
+                  </template>
+                </td>
                 <td class="py-1">
                   <span
                     v-for="(r, ri) in it.routes"
@@ -248,7 +278,7 @@ function printList() {
                 </td>
               </tr>
               <tr v-if="items.length === 0">
-                <td colspan="3" class="py-6 text-center text-gray-400">
+                <td colspan="6" class="py-6 text-center text-gray-400">
                   該当期間に運賃データがありません（期間・請求区分を変更してみてください）
                 </td>
               </tr>
