@@ -10,6 +10,8 @@ interface UnchinAliasGroup {
   group_id: string
   label: string
   item_codes: string[]
+  kind: 'merge' | 'exception'
+  note: string
   registered_by: string
   registered_at: string
 }
@@ -35,6 +37,8 @@ const itemOptions = ref<ItemOption[]>([])
 const search = ref('')
 
 const newLabel = ref('')
+const newKind = ref<'merge' | 'exception'>('merge')
+const newNote = ref('')
 const selectedCodes = ref<string[]>([])
 const saving = ref(false)
 const saveMsg = ref('')
@@ -94,10 +98,17 @@ async function createGroup() {
     }
     await $fetch('/api/unchin/alias/items', {
       method: 'POST',
-      body: { label: newLabel.value.trim(), item_codes: selectedCodes.value },
+      body: {
+        label: newLabel.value.trim(),
+        item_codes: selectedCodes.value,
+        kind: newKind.value,
+        note: newNote.value.trim(),
+      },
     })
     saveMsg.value = '✅ 登録しました'
     newLabel.value = ''
+    newNote.value = ''
+    newKind.value = 'merge'
     selectedCodes.value = []
     await loadGroups()
   } catch (e: unknown) {
@@ -141,9 +152,25 @@ async function deleteGroup(groupId: string) {
       <template v-else>
         <div class="bg-white rounded-lg shadow p-4 mb-6">
           <h2 class="font-semibold text-base mb-3">新規グルーピング登録</h2>
+          <div class="mb-3 flex gap-4 text-sm">
+            <label class="flex items-center gap-1 cursor-pointer">
+              <input v-model="newKind" type="radio" value="merge">
+              同一としてまとめる
+            </label>
+            <label class="flex items-center gap-1 cursor-pointer">
+              <input v-model="newKind" type="radio" value="exception">
+              別物として記録する（例外・誤統合防止の備忘）
+            </label>
+          </div>
           <div class="mb-3">
-            <label class="block text-xs text-gray-500">表示名（まとめた後の品目名）</label>
+            <label class="block text-xs text-gray-500">
+              {{ newKind === 'exception' ? '表示名（記録用のラベル）' : '表示名（まとめた後の品目名）' }}
+            </label>
             <input v-model="newLabel" type="text" class="border rounded px-2 py-1 text-sm w-full max-w-sm" placeholder="例: 一般貨物運賃">
+          </div>
+          <div class="mb-3">
+            <label class="block text-xs text-gray-500">備考（例外の理由等、任意）</label>
+            <input v-model="newNote" type="text" class="border rounded px-2 py-1 text-sm w-full max-w-sm" placeholder="例: 似ているが積地が違うため別物">
           </div>
           <div class="mb-3">
             <label class="block text-xs text-gray-500">品名コード検索</label>
@@ -167,7 +194,7 @@ async function deleteGroup(groupId: string) {
             class="bg-orange-600 text-white px-4 py-1 rounded text-sm hover:bg-orange-700 disabled:bg-gray-400"
             @click="createGroup"
           >
-            {{ saving ? '登録中…' : 'グルーピングを登録' }}
+            {{ saving ? '登録中…' : newKind === 'exception' ? '例外として記録' : 'グルーピングを登録' }}
           </button>
           <div v-if="saveMsg" class="mt-2 text-sm whitespace-pre-wrap">{{ saveMsg }}</div>
         </div>
@@ -177,14 +204,24 @@ async function deleteGroup(groupId: string) {
           <table class="w-full text-sm">
             <thead class="border-b text-gray-500">
               <tr>
+                <th class="text-left py-1">種別</th>
                 <th class="text-left py-1">表示名</th>
                 <th class="text-left py-1">品名コード</th>
+                <th class="text-left py-1">備考</th>
                 <th class="text-left py-1">登録者・日時</th>
                 <th class="text-left py-1" />
               </tr>
             </thead>
             <tbody>
               <tr v-for="g in groups" :key="g.group_id" class="border-b border-gray-100">
+                <td class="py-1">
+                  <span
+                    class="px-2 py-0.5 rounded text-xs"
+                    :class="g.kind === 'exception' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'"
+                  >
+                    {{ g.kind === 'exception' ? '例外(別物)' : 'まとめる' }}
+                  </span>
+                </td>
                 <td class="py-1">{{ g.label }}</td>
                 <td class="py-1">
                   <span
@@ -193,13 +230,14 @@ async function deleteGroup(groupId: string) {
                     class="inline-block mr-1 mb-1 px-2 py-0.5 bg-gray-100 rounded text-xs"
                   >{{ c }}</span>
                 </td>
+                <td class="py-1 text-xs text-gray-500">{{ g.note }}</td>
                 <td class="py-1 text-xs text-gray-400">{{ g.registered_by }} / {{ g.registered_at.slice(0, 10) }}</td>
                 <td class="py-1 text-right">
                   <button class="text-red-600 text-xs hover:underline" @click="deleteGroup(g.group_id)">削除</button>
                 </td>
               </tr>
               <tr v-if="groups.length === 0">
-                <td colspan="4" class="py-6 text-center text-gray-400">登録済みグルーピングはありません</td>
+                <td colspan="6" class="py-6 text-center text-gray-400">登録済みグルーピングはありません</td>
               </tr>
             </tbody>
           </table>

@@ -85,6 +85,9 @@ const registerMsg = ref('')
  */
 const selectedForGroup = ref<Set<string>>(new Set())
 const groupLabel = ref('')
+/** 'merge' = 同一としてまとめる / 'exception' = 別物として記録 (#57 follow-up)。 */
+const groupKind = ref<'merge' | 'exception'>('merge')
+const groupNote = ref('')
 const grouping = ref(false)
 const groupMsg = ref('')
 
@@ -106,11 +109,18 @@ async function createGroupFromSelection() {
     }
     await $fetch('/api/unchin/alias/items', {
       method: 'POST',
-      body: { label: groupLabel.value.trim(), item_codes: itemCodes },
+      body: {
+        label: groupLabel.value.trim(),
+        item_codes: itemCodes,
+        kind: groupKind.value,
+        note: groupNote.value.trim(),
+      },
     })
-    groupMsg.value = '✅ グルーピングを登録しました'
+    groupMsg.value = groupKind.value === 'exception' ? '✅ 例外として記録しました' : '✅ グルーピングを登録しました'
     selectedForGroup.value = new Set()
     groupLabel.value = ''
+    groupNote.value = ''
+    groupKind.value = 'merge'
     // alias 反映後の表示に更新
     if (selectedVersionId.value === LIVE_VERSION) {
       await loadLiveCandidates()
@@ -347,9 +357,23 @@ function printList() {
           </table>
 
           <div v-if="selectedForGroup.size > 0" class="mt-3 pt-3 border-t flex items-end gap-3 flex-wrap no-print">
+            <div class="flex gap-3 text-sm">
+              <label class="flex items-center gap-1 cursor-pointer">
+                <input v-model="groupKind" type="radio" value="merge">
+                同一としてまとめる
+              </label>
+              <label class="flex items-center gap-1 cursor-pointer">
+                <input v-model="groupKind" type="radio" value="exception">
+                別物として記録（例外）
+              </label>
+            </div>
             <div>
-              <label class="block text-xs text-gray-500">表示名（まとめた後の品目名）</label>
+              <label class="block text-xs text-gray-500">表示名</label>
               <input v-model="groupLabel" type="text" class="border rounded px-2 py-1 text-sm" placeholder="例: 精製原料輸送">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500">備考（任意）</label>
+              <input v-model="groupNote" type="text" class="border rounded px-2 py-1 text-sm" placeholder="例: 積地が違うため別物">
             </div>
             <span class="text-xs text-gray-500">選択中: {{ selectedForGroup.size }} 件の品名コード</span>
             <button
@@ -357,7 +381,7 @@ function printList() {
               class="bg-orange-600 text-white px-4 py-1 rounded text-sm hover:bg-orange-700 disabled:bg-gray-400"
               @click="createGroupFromSelection"
             >
-              {{ grouping ? '登録中…' : 'グルーピングを登録' }}
+              {{ grouping ? '登録中…' : groupKind === 'exception' ? '例外として記録' : 'グルーピングを登録' }}
             </button>
             <button class="text-xs text-gray-500 hover:underline" @click="selectedForGroup = new Set()">
               選択解除
