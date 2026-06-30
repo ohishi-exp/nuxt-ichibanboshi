@@ -306,7 +306,16 @@ function fmtYen(n: number): string {
   <div class="min-h-screen bg-gray-100">
     <header class="bg-white shadow">
       <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <h1 class="text-xl font-bold">担当者別売上 再計算</h1>
+        <div class="flex items-center gap-4">
+          <h1 class="text-xl font-bold">担当者別売上 再計算</h1>
+          <NuxtLink
+            to="/"
+            class="text-sm text-blue-600 hover:underline no-print"
+            title="トップページ (売上ダッシュボード) に戻る"
+          >
+            ← トップへ戻る
+          </NuxtLink>
+        </div>
         <AuthToolbar :show-copy-url="false" :show-qr="false" />
       </div>
     </header>
