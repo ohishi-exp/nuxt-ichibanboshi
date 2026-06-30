@@ -268,6 +268,25 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
       </div>
 
       <div v-else class="space-y-6">
+        <!-- 担当者 chart/table 群の共通フィルタ。3 つすべて (順位推移 / 構成順位 /
+             構成推移) を一括で切替。section の最上部に大きめサイズで配置
+             (user 2026-06-30 「横横フィルタもない」= toggle が目立たないとの指摘)。 -->
+        <div class="bg-white rounded-lg shadow p-3 flex items-center gap-3 no-print">
+          <span class="text-sm font-semibold text-gray-700">🔀 担当者集計フィルタ:</span>
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input v-model="excludeYokoyoko" type="checkbox" class="rounded w-4 h-4" />
+            <span class="text-sm">
+              <strong>横横除外</strong>
+              <span class="text-xs text-gray-500 ml-1">
+                (= 自社運行のみ、他社運行委託 [受注∈ AND 稼動∉] を除外)
+              </span>
+            </span>
+          </label>
+          <span class="ml-auto text-xs px-2 py-0.5 rounded" :class="excludeYokoyoko ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'">
+            現在: {{ excludeYokoyoko ? '横横除外 (自社運行のみ)' : '全部 (PHP 互換)' }}
+          </span>
+        </div>
+
         <div class="print-section print-chart">
           <div v-if="personMonthlyError" class="bg-white rounded-lg shadow p-4 mb-2 text-sm text-red-700">
             担当者順位推移 endpoint エラー: {{ personMonthlyError }}
@@ -275,14 +294,7 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
               rust-ichiban への接続もしくは認証 (CF Access Service Token) を確認
             </div>
           </div>
-          <!-- 横横除外フィルタ toggle: 3 つの担当者 chart/table を一括切替 -->
-          <div class="bg-white rounded-lg shadow px-4 py-2 mb-2 flex items-center justify-end gap-2 no-print">
-            <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
-              <input v-model="excludeYokoyoko" type="checkbox" class="rounded" />
-              横横除外 (= 自社運行のみ、他社運行委託 [受注∈ AND 稼動∉] を除外)
-            </label>
-          </div>
-          <UriagePersonBumpChart :rows="personMonthlyRows" :exclude-yokoyoko="excludeYokoyoko" />
+          <UriagePersonBumpChart :rows="personMonthlyRows" v-model:exclude-yokoyoko="excludeYokoyoko" />
           <div v-if="personMonthlyRows.length === 0 && !personMonthlyError" class="text-xs text-gray-500 mt-1 text-right">
             データがあれば自動表示されます。<a href="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</a> で再計算を実行してください。
           </div>
@@ -292,13 +304,13 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
              (user 2026-06-30: 「表は 2 列にしないで」)。 -->
         <UriagePersonShareRanking
           :rows="personMonthlyRows"
-          :exclude-yokoyoko="excludeYokoyoko"
+          v-model:exclude-yokoyoko="excludeYokoyoko"
           :period-label="periodLabel"
         />
 
         <!-- 担当者 売上構成推移 (% trend chart)。横横除外 toggle と連動。 -->
         <div class="print-section print-chart">
-          <UriagePersonShareTrendChart :rows="personMonthlyRows" :exclude-yokoyoko="excludeYokoyoko" />
+          <UriagePersonShareTrendChart :rows="personMonthlyRows" v-model:exclude-yokoyoko="excludeYokoyoko" />
         </div>
 
         <div>

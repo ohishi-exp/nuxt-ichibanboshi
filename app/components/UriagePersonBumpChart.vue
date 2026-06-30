@@ -24,19 +24,19 @@ interface MonthlyTotal {
   kensuu_y0?: number
 }
 
-const props = withDefaults(
-  defineProps<{
-    rows: MonthlyTotal[]
-    /** true で横横=1 (他社運行委託) を除外した y0 値で集計する。
-     * default false (= 合計、PHP 互換 view) */
-    excludeYokoyoko?: boolean
-  }>(),
-  { excludeYokoyoko: false },
-)
+const props = defineProps<{
+  rows: MonthlyTotal[]
+}>()
+
+/** 横横除外フィルタ (v-model:exclude-yokoyoko で親と双方向 binding)。
+ * true で横横=1 (他社運行委託) を除外した y0 値で集計する。
+ * default false (= 合計、PHP 互換 view)。
+ * user 2026-06-30 「個々にも横横フィルタ表示」要望で component 内 toggle も持つ。 */
+const excludeYokoyoko = defineModel<boolean>('excludeYokoyoko', { default: false })
 
 /** 横横除外フィルタを考慮した kingaku 取得 */
 function pickKingaku(r: MonthlyTotal): number {
-  return props.excludeYokoyoko ? (r.kingaku_y0 ?? 0) : r.kingaku
+  return excludeYokoyoko.value ? (r.kingaku_y0 ?? 0) : r.kingaku
 }
 
 const TOP_N = 15
@@ -122,7 +122,7 @@ const option = computed(() => {
 
   return {
     title: {
-      text: `担当者 売上順位推移 (期間合計 上位 ${d.series.length} 名)${props.excludeYokoyoko ? ' [横横除外]' : ''}`,
+      text: `担当者 売上順位推移 (期間合計 上位 ${d.series.length} 名)${excludeYokoyoko.value ? ' [横横除外]' : ''}`,
       left: 'center',
     },
     tooltip: {
@@ -191,6 +191,13 @@ const option = computed(() => {
 
 <template>
   <div class="bg-white rounded-lg shadow p-4">
+    <!-- component 内 toggle (親と v-model:exclude-yokoyoko で同期) -->
+    <div class="flex items-center justify-end mb-1 no-print">
+      <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
+        <input v-model="excludeYokoyoko" type="checkbox" class="rounded" />
+        横横除外
+      </label>
+    </div>
     <div v-if="chartData.series.length === 0" class="text-gray-500 text-sm text-center py-10">
       (データなし — 期間を変えるか、`/admin/recalc` で再計算してください)
     </div>

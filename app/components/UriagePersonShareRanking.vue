@@ -24,21 +24,22 @@ interface MonthlyTotal {
 const props = withDefaults(
   defineProps<{
     rows: MonthlyTotal[]
-    /** true で横横=1 (他社運行委託) を除外した y0 値で集計する */
-    excludeYokoyoko?: boolean
     /** 表示行数 (default 20) */
     limit?: number
     /** 表のタイトルに含める期間ラベル (例: "2026-01〜2026-06") */
     periodLabel?: string
   }>(),
-  { excludeYokoyoko: false, limit: 20, periodLabel: '' },
+  { limit: 20, periodLabel: '' },
 )
 
+/** 横横除外フィルタ (v-model:exclude-yokoyoko で親と双方向 binding) */
+const excludeYokoyoko = defineModel<boolean>('excludeYokoyoko', { default: false })
+
 function pickKingaku(r: MonthlyTotal): number {
-  return props.excludeYokoyoko ? (r.kingaku_y0 ?? 0) : r.kingaku
+  return excludeYokoyoko.value ? (r.kingaku_y0 ?? 0) : r.kingaku
 }
 function pickKensuu(r: MonthlyTotal): number {
-  return props.excludeYokoyoko ? (r.kensuu_y0 ?? 0) : r.kensuu
+  return excludeYokoyoko.value ? (r.kensuu_y0 ?? 0) : r.kensuu
 }
 
 interface RankingRow {
@@ -91,10 +92,17 @@ function fmtMan(yen: number): string {
 
 <template>
   <div class="bg-white rounded-lg shadow p-4 print-section print-table">
-    <div class="text-sm font-semibold mb-2">
-      担当者 売上構成順位 (期間合計 上位 {{ ranking.length }} 名)
-      <span v-if="excludeYokoyoko" class="ml-1 text-xs text-purple-700">[横横除外]</span>
-      <span v-if="periodLabel" class="ml-1 text-xs text-gray-500">({{ periodLabel }})</span>
+    <div class="flex items-center mb-2">
+      <div class="text-sm font-semibold">
+        担当者 売上構成順位 (期間合計 上位 {{ ranking.length }} 名)
+        <span v-if="excludeYokoyoko" class="ml-1 text-xs text-purple-700">[横横除外]</span>
+        <span v-if="periodLabel" class="ml-1 text-xs text-gray-500">({{ periodLabel }})</span>
+      </div>
+      <!-- component 内 toggle (親と v-model:exclude-yokoyoko で同期) -->
+      <label class="ml-auto flex items-center gap-1 text-xs cursor-pointer select-none no-print">
+        <input v-model="excludeYokoyoko" type="checkbox" class="rounded" />
+        横横除外
+      </label>
     </div>
     <div v-if="ranking.length === 0" class="text-center py-8 text-gray-500 text-sm">
       (データなし — 期間を変えるか、<NuxtLink to="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</NuxtLink> で再計算してください)

@@ -24,17 +24,15 @@ interface MonthlyTotal {
   kensuu_y0?: number
 }
 
-const props = withDefaults(
-  defineProps<{
-    rows: MonthlyTotal[]
-    /** true で横横=1 (他社運行委託) を除外した y0 値で集計する */
-    excludeYokoyoko?: boolean
-  }>(),
-  { excludeYokoyoko: false },
-)
+const props = defineProps<{
+  rows: MonthlyTotal[]
+}>()
+
+/** 横横除外フィルタ (v-model:exclude-yokoyoko で親と双方向 binding) */
+const excludeYokoyoko = defineModel<boolean>('excludeYokoyoko', { default: false })
 
 function pickKingaku(r: MonthlyTotal): number {
-  return props.excludeYokoyoko ? (r.kingaku_y0 ?? 0) : r.kingaku
+  return excludeYokoyoko.value ? (r.kingaku_y0 ?? 0) : r.kingaku
 }
 
 const TOP_N = 15
@@ -114,7 +112,7 @@ const option = computed(() => {
 
   return {
     title: {
-      text: `担当者 売上構成推移 (期間合計 上位 ${d.series.length} 名)${props.excludeYokoyoko ? ' [横横除外]' : ''}`,
+      text: `担当者 売上構成推移 (期間合計 上位 ${d.series.length} 名)${excludeYokoyoko.value ? ' [横横除外]' : ''}`,
       left: 'center',
     },
     tooltip: {
@@ -139,6 +137,12 @@ const option = computed(() => {
       top: 50,
       bottom: 20,
       textStyle: { fontSize: 11 },
+      // legend `data` を明示しないと series 配列順 (= reverse 後の小さい順) で
+      // legend が表示され、chart の stack (大きい順に上から積む) と上下が逆になる
+      // (user 2026-06-30 「なぜ順番ずれる?」)。
+      // chartData.series は元々「大きい順」なので map(s => s.name) で legend を
+      // 降順固定 → legend 1 行目 = chart 最上段 = 期間合計 1 位、で一致する。
+      data: d.series.map((s) => s.name),
       formatter: (name: string) => {
         const s = d.series.find((ss) => ss.name === name)
         if (!s) return name
@@ -183,6 +187,13 @@ const option = computed(() => {
 
 <template>
   <div class="bg-white rounded-lg shadow p-4">
+    <!-- component 内 toggle (親と v-model:exclude-yokoyoko で同期) -->
+    <div class="flex items-center justify-end mb-1 no-print">
+      <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
+        <input v-model="excludeYokoyoko" type="checkbox" class="rounded" />
+        横横除外
+      </label>
+    </div>
     <div v-if="chartData.series.length === 0" class="text-gray-500 text-sm text-center py-10">
       (データなし — 期間を変えるか、<NuxtLink to="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</NuxtLink> で再計算してください)
     </div>
