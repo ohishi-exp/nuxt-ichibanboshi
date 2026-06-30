@@ -32,11 +32,48 @@ const currentYear = new Date().getFullYear()
 const from = ref(`${currentYear}-01-01`)
 const to = ref(`${currentYear + 1}-01-01`)
 const kind = ref<Kind>('with_non_billing')
+/**
+ * 得意先C (得意先H 無視) でまとめる opt-in トグル。default OFF。
+ * 表示名一致による自動マージはしない (#57 確定事項。得意先H は支店違い等で正当に
+ * 異なる場合があるため)。ON の時だけ得意先Cでサーバー集計を合算し直す。
+ */
+const groupByCode = ref(false)
 
 const customerSummary = ref<PartnerSummary[]>([])
 const subcontractorSummary = ref<PartnerSummary[]>([])
 const customerSource = ref('')
 const subcontractorSource = ref('')
+
+/** `得意先C-得意先H` の `得意先C` 部分のみ取り出す（クライアント側、server/utils と同ロジック）。 */
+function partnerBaseCode(partnerCode: string): string {
+  const idx = partnerCode.indexOf('-')
+  return idx === -1 ? partnerCode : partnerCode.slice(0, idx)
+}
+function mergeByBaseCode(rows: PartnerSummary[]): PartnerSummary[] {
+  const map = new Map<string, PartnerSummary>()
+  for (const row of rows) {
+    const base = partnerBaseCode(row.partner_code)
+    let group = map.get(base)
+    if (!group) {
+      group = { partner_code: base, partner_name: row.partner_name, total: 0 }
+      map.set(base, group)
+    }
+    group.total += row.total
+  }
+  return Array.from(map.values()).sort((a, b) => b.total - a.total)
+}
+
+const customerSummaryDisplay = computed(() =>
+  groupByCode.value ? mergeByBaseCode(customerSummary.value) : customerSummary.value,
+)
+const subcontractorSummaryDisplay = computed(() =>
+  groupByCode.value ? mergeByBaseCode(subcontractorSummary.value) : subcontractorSummary.value,
+)
+
+function detailLink(partnerType: 'customer' | 'subcontractor', partnerCode: string): string {
+  const base = `/unchin/${partnerType}/${encodeURIComponent(partnerCode)}`
+  return groupByCode.value ? `${base}?groupByCode=1` : base
+}
 
 async function load() {
   loading.value = true
@@ -75,6 +112,9 @@ function fmtYen(n: number): string {
           <NuxtLink to="/" class="text-sm text-blue-600 hover:underline no-print">
             ← トップへ戻る
           </NuxtLink>
+          <NuxtLink to="/unchin/alias-items" class="text-sm text-blue-600 hover:underline no-print">
+            品名グルーピング管理
+          </NuxtLink>
         </div>
         <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
       </div>
@@ -101,6 +141,10 @@ function fmtYen(n: number): string {
         <button class="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700" @click="load">
           更新
         </button>
+        <label class="flex items-center gap-1 text-sm text-gray-600 ml-2">
+          <input v-model="groupByCode" type="checkbox" class="rounded">
+          得意先コードでまとめる (支店違いを合算、opt-in)
+        </label>
       </div>
 
       <div v-if="loading" class="text-center py-20 text-gray-500">読み込み中...</div>
@@ -118,15 +162,15 @@ function fmtYen(n: number): string {
             </thead>
             <tbody>
               <tr
-                v-for="p in customerSummary"
+                v-for="p in customerSummaryDisplay"
                 :key="p.partner_code"
                 class="border-b border-gray-100 hover:bg-blue-50 cursor-pointer"
-                @click="navigateTo(`/unchin/customer/${encodeURIComponent(p.partner_code)}`)"
+                @click="navigateTo(detailLink('customer', p.partner_code))"
               >
                 <td class="py-1">{{ p.partner_name || p.partner_code }}</td>
                 <td class="py-1 text-right">{{ fmtYen(p.total) }}</td>
               </tr>
-              <tr v-if="customerSummary.length === 0">
+              <tr v-if="customerSummaryDisplay.length === 0">
                 <td colspan="2" class="py-6 text-center text-gray-400">データがありません</td>
               </tr>
             </tbody>
@@ -145,15 +189,15 @@ function fmtYen(n: number): string {
             </thead>
             <tbody>
               <tr
-                v-for="p in subcontractorSummary"
+                v-for="p in subcontractorSummaryDisplay"
                 :key="p.partner_code"
                 class="border-b border-gray-100 hover:bg-blue-50 cursor-pointer"
-                @click="navigateTo(`/unchin/subcontractor/${encodeURIComponent(p.partner_code)}`)"
+                @click="navigateTo(detailLink('subcontractor', p.partner_code))"
               >
                 <td class="py-1">{{ p.partner_name || p.partner_code }}</td>
                 <td class="py-1 text-right">{{ fmtYen(p.total) }}</td>
               </tr>
-              <tr v-if="subcontractorSummary.length === 0">
+              <tr v-if="subcontractorSummaryDisplay.length === 0">
                 <td colspan="2" class="py-6 text-center text-gray-400">データがありません</td>
               </tr>
             </tbody>
