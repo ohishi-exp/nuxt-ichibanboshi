@@ -120,16 +120,24 @@ interface PersonMonthlyTotalsResponse {
   rows: PersonMonthlyTotalRow[]
 }
 const personMonthlyRows = ref<PersonMonthlyTotalRow[]>([])
+const personMonthlyError = ref('')
 
 async function loadPersonMonthlyTotals() {
+  personMonthlyError.value = ''
   try {
+    // SQLite に入っている全月を取りたいので、wide range で投げる。
+    // ページ全体の from/to (例: 2025-04〜2026-03 = 年度) では recalc 済 月
+    // (現状 editable_months = 2026-06,07) と被らずデータゼロになるため、
+    // chart は独自に「過去〜未来」相当の wide range で問い合わせる。
     const res = await $fetch<PersonMonthlyTotalsResponse>(
-      `/api/uriage/person-monthly-totals?from=${from.value}&to=${to.value}&cal=true`,
+      `/api/uriage/person-monthly-totals?from=2000-01&to=2099-12&cal=true`,
     )
     personMonthlyRows.value = res.rows
-  } catch {
+  } catch (e: unknown) {
     // recalc 未実行 / endpoint 未到達でも他チャートは表示する
     personMonthlyRows.value = []
+    const err = e as { statusCode?: number; statusMessage?: string }
+    personMonthlyError.value = `${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
   }
 }
 
@@ -353,7 +361,16 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
         </div>
 
         <div class="print-section print-chart">
+          <div v-if="personMonthlyError" class="bg-white rounded-lg shadow p-4 mb-2 text-sm text-red-700">
+            担当者順位推移 endpoint エラー: {{ personMonthlyError }}
+            <div class="text-xs text-gray-500 mt-1">
+              rust-ichiban への接続もしくは認証 (CF Access Service Token) を確認
+            </div>
+          </div>
           <UriagePersonBumpChart :rows="personMonthlyRows" />
+          <div v-if="personMonthlyRows.length === 0 && !personMonthlyError" class="text-xs text-gray-500 mt-1 text-right">
+            データがあれば自動表示されます。<a href="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</a> で再計算を実行してください。
+          </div>
         </div>
 
         <div class="print-section print-chart">
