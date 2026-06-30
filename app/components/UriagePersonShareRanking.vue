@@ -24,12 +24,13 @@ interface MonthlyTotal {
 const props = withDefaults(
   defineProps<{
     rows: MonthlyTotal[]
-    /** 表示行数 (default 20) */
+    /** 表示行数 (default 30、user 2026-06-30 「30 位にしたら?」)。
+     * 実担当者 ~20 名なので 30 で全員入る。 */
     limit?: number
     /** 表のタイトルに含める期間ラベル (例: "2026-01〜2026-06") */
     periodLabel?: string
   }>(),
-  { limit: 20, periodLabel: '' },
+  { limit: 30, periodLabel: '' },
 )
 
 /** 横横除外フィルタ (v-model:exclude-yokoyoko で親と双方向 binding) */
