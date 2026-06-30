@@ -220,7 +220,16 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
   <div class="min-h-screen bg-gray-100">
     <header class="bg-white shadow">
       <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <h1 class="text-xl font-bold">一番星 売上ダッシュボード</h1>
+        <div class="flex items-center gap-4">
+          <h1 class="text-xl font-bold">一番星 売上ダッシュボード</h1>
+          <NuxtLink
+            to="/admin/recalc"
+            class="text-sm text-blue-600 hover:underline no-print"
+            title="担当者別売上の再計算・verify・R2 同期を実行する管理画面"
+          >
+            🔧 /admin/recalc
+          </NuxtLink>
+        </div>
         <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
       </div>
     </header>
