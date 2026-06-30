@@ -198,7 +198,8 @@ export function mergePartnerSummaryByBaseCode(rows: UnchinPartnerSummaryRow[]): 
 // 得意先を「値上げ候補」「サーチャージ導入候補」「除外」等に分類するための自由形式タグ。
 // タグの種類自体もユーザーが自由に追加・削除できる (固定リストにしない)。
 // 1 つの得意先が複数タグに所属することもある (多対多)。
-// 「日付でも分類」は付与日 (`assigned_at`) を記録するだけに留める (履歴・監査用)。
+// 日付による分類は付与日時刻の記録ではなく、タグ自体を日付・期間単位で作成して
+// 管理する (例: 「2026-06値上げ」タグ。#57 follow-up で確定)。
 
 export interface UnchinPartnerTagDef {
   tag_id: string
@@ -215,7 +216,6 @@ export interface UnchinPartnerTagAssignment {
   /** 例外・備考 (#57 follow-up で「例外も記録したい」に対応)。 */
   note: string
   assigned_by: string
-  assigned_at: string
 }
 
 export function unchinTagDefsKey(): string {

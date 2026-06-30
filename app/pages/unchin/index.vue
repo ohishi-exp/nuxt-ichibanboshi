@@ -43,7 +43,6 @@ interface TagAssignment {
   tag_id: string
   note: string
   assigned_by: string
-  assigned_at: string
 }
 interface TagAssignmentsResponse {
   assignments: TagAssignment[]

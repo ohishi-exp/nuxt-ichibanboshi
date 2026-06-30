@@ -3,8 +3,8 @@
  *
  * 得意先・傭車先にタグを割り当てる。1 つの得意先が複数タグに所属することもある
  * (多対多、#57 follow-up)。同一 (partner_type, partner_code, tag_id) の重複割り当ては
- * 既存を返す (冪等)。`assigned_at` (付与日) を記録するだけで、有効期間は持たない
- * (#57 follow-up で「タグ付与日を記録」に確定)。`note` は例外・備考用。
+ * 既存を返す (冪等)。付与日時刻は記録しない — 日付による分類はタグ自体を日付・期間
+ * 単位で作成して管理する (#57 follow-up で確定)。`note` は例外・備考用。
  */
 import { decodeJwtPayloadFromToken } from '@ippoan/auth-client/server'
 import type { PartnerType, UnchinPartnerTagAssignment } from '~~/server/utils/unchin'
@@ -53,7 +53,6 @@ export default defineEventHandler(async (event) => {
     tag_id: tagId,
     note,
     assigned_by: assignedBy,
-    assigned_at: new Date().toISOString(),
   }
   await saveTagAssignments(bucket, [entry, ...assignments])
 
