@@ -348,12 +348,15 @@ function fmtYen(n: number): string {
                     <button class="opacity-60 hover:opacity-100" @click="removeTagAssignment(a.assignment_id)">×</button>
                   </span>
                   <span v-if="openTagPickerKey === `customer:${p.partner_code}`" class="inline-flex items-center gap-1">
-                    <select v-model="pickerTagId" class="border rounded text-xs px-1 py-0.5">
-                      <option value="">タグ選択</option>
+                    <input v-model="pickerNote" type="text" placeholder="備考(任意)" class="border rounded text-xs px-1 py-0.5 w-16">
+                    <select
+                      v-model="pickerTagId"
+                      class="border rounded text-xs px-1 py-0.5"
+                      @change="assignTag('customer', p.partner_code)"
+                    >
+                      <option value="">タグ選択（選ぶと即保存）</option>
                       <option v-for="d in tagDefs" :key="d.tag_id" :value="d.tag_id">{{ d.label }}</option>
                     </select>
-                    <input v-model="pickerNote" type="text" placeholder="備考" class="border rounded text-xs px-1 py-0.5 w-16">
-                    <button class="text-xs text-blue-600" @click="assignTag('customer', p.partner_code)">追加</button>
                     <button class="text-xs text-gray-400" @click="openTagPickerKey = null">×</button>
                   </span>
                   <button v-else class="text-xs text-gray-400 hover:text-blue-600" @click="openTagPicker('customer', p.partner_code)">+ タグ</button>
@@ -397,12 +400,15 @@ function fmtYen(n: number): string {
                     <button class="opacity-60 hover:opacity-100" @click="removeTagAssignment(a.assignment_id)">×</button>
                   </span>
                   <span v-if="openTagPickerKey === `subcontractor:${p.partner_code}`" class="inline-flex items-center gap-1">
-                    <select v-model="pickerTagId" class="border rounded text-xs px-1 py-0.5">
-                      <option value="">タグ選択</option>
+                    <input v-model="pickerNote" type="text" placeholder="備考(任意)" class="border rounded text-xs px-1 py-0.5 w-16">
+                    <select
+                      v-model="pickerTagId"
+                      class="border rounded text-xs px-1 py-0.5"
+                      @change="assignTag('subcontractor', p.partner_code)"
+                    >
+                      <option value="">タグ選択（選ぶと即保存）</option>
                       <option v-for="d in tagDefs" :key="d.tag_id" :value="d.tag_id">{{ d.label }}</option>
                     </select>
-                    <input v-model="pickerNote" type="text" placeholder="備考" class="border rounded text-xs px-1 py-0.5 w-16">
-                    <button class="text-xs text-blue-600" @click="assignTag('subcontractor', p.partner_code)">追加</button>
                     <button class="text-xs text-gray-400" @click="openTagPickerKey = null">×</button>
                   </span>
                   <button v-else class="text-xs text-gray-400 hover:text-blue-600" @click="openTagPicker('subcontractor', p.partner_code)">+ タグ</button>
