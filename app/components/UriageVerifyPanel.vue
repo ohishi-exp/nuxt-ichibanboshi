@@ -70,6 +70,33 @@ const historyMsg = ref('')
 const r2SyncLoading = ref(false)
 const r2SyncMsg = ref('')
 const r2SyncResult = ref<R2SyncResult | null>(null)
+/** R2 同期 orchestrator の現在 phase (UI 進捗バー用) */
+const r2SyncPhase = ref<'idle' | 'fetch-pending' | 'verify' | 'sync' | 'done'>('idle')
+
+// ── 状態サマリ state ──
+const summaryLoading = ref(false)
+const summaryMsg = ref('')
+const summaryJobs = ref<RecalcJobRow[]>([])
+
+interface RecalcJobRow {
+  month: string
+  eigyosho_id: number
+  status: 'computed' | 'r2_synced' | 'failed' | string
+  fingerprint_before: string | null
+  fingerprint_after: string | null
+  raw_path: string | null
+  created_at: string
+  computed_at: string | null
+  r2_synced_at: string | null
+  last_error: string | null
+}
+
+interface RecalcJobsResponse {
+  from: string
+  to: string
+  count: number
+  jobs: RecalcJobRow[]
+}
 
 interface R2PendingItem {
   month: string
@@ -455,19 +482,31 @@ async function runR2SyncVerifyFirst() {
   r2SyncLoading.value = true
   r2SyncMsg.value = ''
   r2SyncResult.value = null
+  r2SyncPhase.value = 'fetch-pending'
   try {
     // 1. pending list
+    r2SyncMsg.value = '[1/3] pending list 取得中…'
     const pendingRes = await $fetch<{ count: number; items: R2PendingItem[] }>(
       '/api/uriage/r2-pending',
     )
     const unverified = pendingRes.items.filter((i) => i.blocker === 'unverified')
     const ngPresent = pendingRes.items.filter((i) => i.blocker === 'ng_present')
     const readyCount = pendingRes.items.filter((i) => i.ready).length
+    if (pendingRes.count === 0) {
+      r2SyncMsg.value =
+        '[完了] R2 同期対象なし (recalc 未実行 or 既に同期済み)。先に下のサマリで状態を確認、未実行なら /admin/recalc の「再計算 → R2 同期」を実行してください。'
+      r2SyncPhase.value = 'done'
+      // 状態サマリも自動 reload (どのバケットが既同期かが見える)
+      void loadStatusSummary()
+      return
+    }
     r2SyncMsg.value =
-      `pending: ${pendingRes.count} (ready=${readyCount}, unverified=${unverified.length}, ng_present=${ngPresent.length})`
+      `[1/3] pending: ${pendingRes.count} bucket (ready=${readyCount}, unverified=${unverified.length}, ng_present=${ngPresent.length})`
 
     // 2. unverified bucket を verify (browser-side iterate)
     if (unverified.length > 0) {
+      r2SyncPhase.value = 'verify'
+      r2SyncMsg.value += `\n[2/3] unverified ${unverified.length} bucket を verify 中…`
       const nextRunId = currentRunId.value + 1
       currentRunId.value = nextRunId
       const verifyJobs: VerifyJob[] = []
@@ -504,29 +543,76 @@ async function runR2SyncVerifyFirst() {
       const workers: Promise<void>[] = []
       for (let i = 0; i < conc; i++) workers.push(worker())
       await Promise.all(workers)
-      r2SyncMsg.value += ` → verify 完了 (${verifyJobs.length} cells)`
+      r2SyncMsg.value += ` → verify 完了 (${verifyJobs.length} cells、進捗バー参照)`
     }
 
     // 3. ng_present は skip 警告だけ
     if (ngPresent.length > 0) {
-      r2SyncMsg.value += ` / NG bucket は skip (要 fix)`
+      r2SyncMsg.value += `\n[2/3] NG bucket は skip (${ngPresent.length}、要 fix)`
     }
 
     // 4. ready bucket をまとめて sync
+    r2SyncPhase.value = 'sync'
+    r2SyncMsg.value += `\n[3/3] R2 sync 実行中…`
     const syncRes = await $fetch<R2SyncResult>('/api/uriage/r2-sync', { method: 'POST' })
     r2SyncResult.value = syncRes
-    r2SyncMsg.value += ` → R2 sync: uploaded=${syncRes.uploaded}/${syncRes.attempted}`
-    if (syncRes.skipped.length > 0) {
-      r2SyncMsg.value += ` / skipped=${syncRes.skipped.length}`
-    }
+    r2SyncPhase.value = 'done'
+    r2SyncMsg.value += `\n[完了] uploaded=${syncRes.uploaded}/${syncRes.attempted}, acked=${syncRes.acked}, failures=${syncRes.failures.length}, skipped=${syncRes.skipped.length}`
+    // 状態サマリも reload (sync 後の状態を反映)
+    void loadStatusSummary()
   } catch (e: unknown) {
     const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
     const dataMsg =
       typeof err.data === 'string' ? err.data : err.data ? JSON.stringify(err.data) : ''
-    r2SyncMsg.value = `❌ R2 同期失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
+    r2SyncMsg.value = `❌ R2 同期失敗 (phase=${r2SyncPhase.value}): ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
+    r2SyncPhase.value = 'idle'
   } finally {
     r2SyncLoading.value = false
   }
+}
+
+/**
+ * 対象期間の recalc_jobs を読んで状態サマリを表示する。
+ * - 行が無い → recalc 未実行
+ * - status=computed + r2_synced_at=null → 計算済、R2 同期待ち
+ * - status=r2_synced → 同期済
+ * - status=failed → recalc 失敗 (last_error 付き)
+ */
+async function loadStatusSummary() {
+  summaryMsg.value = ''
+  summaryLoading.value = true
+  try {
+    // from / to から YYYY-MM を抽出 (date input は YYYY-MM-DD 形式)
+    const fromMonth = from.value.slice(0, 7)
+    const toMonth = to.value.slice(0, 7)
+    if (!fromMonth || !toMonth) {
+      summaryMsg.value = '日付範囲を入力してください'
+      return
+    }
+    const params = new URLSearchParams({ from: fromMonth, to: toMonth })
+    const res = await $fetch<RecalcJobsResponse>(
+      `/api/uriage/recalc-jobs?${params.toString()}`,
+    )
+    summaryJobs.value = res.jobs
+    summaryMsg.value = `期間 ${fromMonth} 〜 ${toMonth}: recalc_jobs ${res.count} 件`
+  } catch (e: unknown) {
+    const err = e as { statusCode?: number; statusMessage?: string }
+    summaryMsg.value = `❌ サマリ取得失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+    summaryJobs.value = []
+  } finally {
+    summaryLoading.value = false
+  }
+}
+
+/** recalc_job status → 表示用ラベル + 色 */
+function jobStatusLabel(j: RecalcJobRow): { text: string; cls: string } {
+  if (j.status === 'r2_synced')
+    return { text: '✅ R2 同期済', cls: 'text-green-700' }
+  if (j.status === 'computed' && j.r2_synced_at === null)
+    return { text: '🟡 計算済、R2 同期待ち', cls: 'text-yellow-700' }
+  if (j.status === 'failed')
+    return { text: `❌ 失敗: ${j.last_error ?? '?'}`, cls: 'text-red-700' }
+  return { text: j.status, cls: 'text-gray-600' }
 }
 
 /** YYYY-MM → "YYYY-MM-DD" (月末日) */
@@ -677,7 +763,15 @@ if (!from.value || !to.value) setDefaultRange()
           @click="runR2SyncVerifyFirst"
           title="未検証 bucket を verify してから R2 sync (verify-first orchestrator)"
         >
-          {{ r2SyncLoading ? 'R2 同期中…' : '🚀 R2 同期 (verify-first)' }}
+          {{ r2SyncLoading ? `R2 同期中… (${r2SyncPhase})` : '🚀 R2 同期 (verify-first)' }}
+        </button>
+        <button
+          :disabled="summaryLoading"
+          class="bg-teal-600 text-white px-3 py-2 rounded text-sm hover:bg-teal-700 disabled:bg-gray-400"
+          @click="loadStatusSummary"
+          title="対象期間で recalc / 同期がどこまで進んでいるか確認 (recalc_jobs テーブル)"
+        >
+          {{ summaryLoading ? 'ロード中…' : '📊 状態サマリ' }}
         </button>
       </div>
 
@@ -701,6 +795,36 @@ if (!from.value || !to.value) setDefaultRange()
           </li>
         </ul>
       </div>
+    </div>
+
+    <div v-if="summaryMsg || summaryJobs.length > 0" class="bg-white rounded-lg shadow p-4">
+      <div class="text-sm font-semibold mb-2">📊 recalc / R2 同期 状態サマリ</div>
+      <div class="text-xs text-gray-600 mb-2">{{ summaryMsg }}</div>
+      <div v-if="summaryJobs.length === 0 && !summaryLoading && summaryMsg" class="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-3 py-2">
+        対象期間に recalc_jobs が 1 件もありません → recalc が未実行です。
+        <NuxtLink to="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</NuxtLink>
+        の「再計算 → R2 同期」ボタンを実行してください (month 指定を空にすれば editable_months 全部 × 全営業所が処理されます)。
+      </div>
+      <table v-if="summaryJobs.length > 0" class="min-w-full text-xs">
+        <thead class="bg-gray-50 border-b">
+          <tr>
+            <th class="px-2 py-1 text-left">month</th>
+            <th class="px-2 py-1 text-left">office</th>
+            <th class="px-2 py-1 text-left">状態</th>
+            <th class="px-2 py-1 text-left">computed_at</th>
+            <th class="px-2 py-1 text-left">r2_synced_at</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="j in summaryJobs" :key="`${j.month}/${j.eigyosho_id}`" class="border-b">
+            <td class="px-2 py-1 font-mono">{{ j.month }}</td>
+            <td class="px-2 py-1">{{ j.eigyosho_id }}</td>
+            <td class="px-2 py-1" :class="jobStatusLabel(j).cls">{{ jobStatusLabel(j).text }}</td>
+            <td class="px-2 py-1 text-gray-500 text-xs">{{ j.computed_at ?? '-' }}</td>
+            <td class="px-2 py-1 text-gray-500 text-xs">{{ j.r2_synced_at ?? '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <div v-if="counts.total > 0" class="bg-white rounded-lg shadow p-4 space-y-3">
