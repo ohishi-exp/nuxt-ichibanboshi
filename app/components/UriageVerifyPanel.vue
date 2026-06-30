@@ -28,6 +28,8 @@ interface VerifyResponse {
   ok: boolean
   row_count: number
   elapsed_ms: number
+  /** rust 側で skip (例: bumon 空) になった理由。値が入っていれば検証実施せず skipped 扱い。 */
+  skipped_reason?: string
 }
 
 type JobStatus = 'pending' | 'running' | 'ok' | 'ng' | 'err' | 'skipped'
@@ -212,7 +214,13 @@ async function runOne(job: VerifyJob): Promise<void> {
       { signal: controller.signal },
     )
     job.response = res
-    job.status = res.ok ? 'ok' : 'ng'
+    if (res.skipped_reason) {
+      // rust 側で skip された (例: bumon 空) → skipped 扱い、error 文言は info
+      job.status = 'skipped'
+      job.error = `(${res.skipped_reason}: office_id=${job.officeId} は検証対象外)`
+    } else {
+      job.status = res.ok ? 'ok' : 'ng'
+    }
   } catch (e: unknown) {
     const err = e as {
       statusCode?: number
