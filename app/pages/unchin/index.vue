@@ -2,64 +2,57 @@
 /**
  * 運賃リスト 一覧ページ (Refs ohishi-exp/rust-ichibanboshi#57)。
  * 得意先別・傭車先別の合計金額を表示し、クリックで明細ページへ遷移する。
+ *
+ * 合計金額は rust 側 `/api/unchin/summary`（SQL の SUM/GROUP BY）から取得する。
+ * raw 行を TOP-N で取得してクライアント側集計する旧方式だと、一部の取引先
+ * （非請求のダミー得意先等）が行数を食い潰して他の取引先が表示されなくなる
+ * 問題があったため、SQL 側で得意先・傭車先ごとに集計済みの値を使う。
  */
 import { AuthToolbar } from '~/composables/useAuth'
 
-interface RoutePair { origin: string, dest: string }
-interface UnchinGroup {
-  partner_code: string
-  partner_name: string
-  item_code: string
-  item_name: string
-  fare: number
-  routes: RoutePair[]
-  count: number
-}
-interface CandidatesResponse {
-  partner_type: 'customer' | 'subcontractor'
-  source_table: string
-  groups: UnchinGroup[]
-}
 interface PartnerSummary {
   partner_code: string
   partner_name: string
   total: number
 }
+interface SummaryResponse {
+  source_table: string
+  data: PartnerSummary[]
+}
+
+type Kind = 'billing_only' | 'transport' | 'non_billing' | 'all'
+const KIND_OPTIONS: { value: Kind, label: string }[] = [
+  { value: 'transport', label: '請求 (請求K=0、default)' },
+  { value: 'billing_only', label: '請求のみ (請求K=1)' },
+  { value: 'non_billing', label: '非請求 (請求K=2)' },
+  { value: 'all', label: '全請求区分' },
+]
 
 const loading = ref(true)
 const error = ref('')
 const currentYear = new Date().getFullYear()
 const from = ref(`${currentYear}-01-01`)
 const to = ref(`${currentYear + 1}-01-01`)
+const kind = ref<Kind>('transport')
 
 const customerSummary = ref<PartnerSummary[]>([])
 const subcontractorSummary = ref<PartnerSummary[]>([])
-
-function summarize(groups: UnchinGroup[]): PartnerSummary[] {
-  const map = new Map<string, PartnerSummary>()
-  for (const g of groups) {
-    const amount = g.fare * g.count
-    const existing = map.get(g.partner_code)
-    if (existing) {
-      existing.total += amount
-    } else {
-      map.set(g.partner_code, { partner_code: g.partner_code, partner_name: g.partner_name, total: amount })
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => b.total - a.total)
-}
+const customerSource = ref('')
+const subcontractorSource = ref('')
 
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const params = new URLSearchParams({ from: from.value, to: to.value })
+    const params = new URLSearchParams({ from: from.value, to: to.value, kind: kind.value })
     const [customerRes, subcontractorRes] = await Promise.all([
-      $fetch<CandidatesResponse>(`/api/unchin/candidates?${params.toString()}&partner_type=customer`),
-      $fetch<CandidatesResponse>(`/api/unchin/candidates?${params.toString()}&partner_type=subcontractor`),
+      $fetch<SummaryResponse>(`/api/unchin/summary?${params.toString()}&partner_type=customer`),
+      $fetch<SummaryResponse>(`/api/unchin/summary?${params.toString()}&partner_type=subcontractor`),
     ])
-    customerSummary.value = summarize(customerRes.groups)
-    subcontractorSummary.value = summarize(subcontractorRes.groups)
+    customerSummary.value = customerRes.data
+    customerSource.value = customerRes.source_table
+    subcontractorSummary.value = subcontractorRes.data
+    subcontractorSource.value = subcontractorRes.source_table
   } catch (e: unknown) {
     const err = e as { statusCode?: number, statusMessage?: string }
     error.value = `読み込みに失敗しました: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
@@ -99,12 +92,17 @@ function fmtYen(n: number): string {
           <label class="block text-xs text-gray-500">to (含まない)</label>
           <input v-model="to" type="date" class="border rounded px-2 py-1 text-sm">
         </div>
+        <div>
+          <label class="block text-xs text-gray-500">請求区分</label>
+          <select v-model="kind" class="border rounded px-2 py-1 text-sm">
+            <option v-for="o in KIND_OPTIONS" :key="o.value" :value="o.value">
+              {{ o.label }}
+            </option>
+          </select>
+        </div>
         <button class="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700" @click="load">
           更新
         </button>
-        <span class="text-xs text-gray-400">
-          ※ 候補データを `運転日報明細` から直接集計した合計です（登録済みバージョンとは別）
-        </span>
       </div>
 
       <div v-if="loading" class="text-center py-20 text-gray-500">読み込み中...</div>
@@ -112,6 +110,7 @@ function fmtYen(n: number): string {
       <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-white rounded-lg shadow p-4">
           <h2 class="font-semibold text-base mb-3">得意先別 売上(請求)金額</h2>
+          <p class="text-xs text-gray-400 mb-2">{{ customerSource }}</p>
           <table class="w-full text-sm">
             <thead class="border-b text-gray-500">
               <tr>
@@ -138,6 +137,7 @@ function fmtYen(n: number): string {
 
         <div class="bg-white rounded-lg shadow p-4">
           <h2 class="font-semibold text-base mb-3">傭車先別 支払金額</h2>
+          <p class="text-xs text-gray-400 mb-2">{{ subcontractorSource }}</p>
           <table class="w-full text-sm">
             <thead class="border-b text-gray-500">
               <tr>
