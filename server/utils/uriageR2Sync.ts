@@ -16,6 +16,18 @@ export interface R2PendingItem {
   raw_path: string
   fingerprint_after: string
   computed_at: string
+  /** verify_jobs に存在する (date, cal) 行数 (全 cal 合計) */
+  verified_count: number
+  /** verify_jobs.ok=1 の行数 */
+  verified_ok: number
+  /** verify_jobs.ok=0 の行数 */
+  verified_ng: number
+  /** 月の日数 × 2 cal (= 完全 verify を満たす期待 cell 数) */
+  expected_count: number
+  /** `true` なら sync 進めて良い */
+  ready: boolean
+  /** `'ng_present'` (NGあり) | `'unverified'` (cells 不足) | `null` */
+  blocker: 'ng_present' | 'unverified' | null
 }
 
 export interface R2PendingResponse {
@@ -36,6 +48,15 @@ export interface UriageSyncResult {
   uploaded: number
   acked: number
   failures: Array<{ month: string; eigyosho_id: number; stage: string; error: string }>
+  /** verify gate で sync が skip された bucket (reason 内訳付き) */
+  skipped: Array<{
+    month: string
+    eigyosho_id: number
+    reason: 'unverified' | 'ng_present'
+    verified_count: number
+    verified_ng: number
+    expected_count: number
+  }>
 }
 
 /**
@@ -95,8 +116,14 @@ async function syncOne(
 }
 
 /**
- * R2 同期のメイン loop。pending を取り、各 entry を順次 sync する。
- * 1 entry の失敗で他を止めない (best effort)。
+ * R2 同期のメイン loop。pending を取り、**`ready=true` の entry のみ** 順次 sync する。
+ * `unverified` / `ng_present` blocker のある entry は `skipped` 配列に積んで報告する。
+ *
+ * verify-first orchestration (= 未検証なら先に verify) は CF Workers の
+ * subrequest 上限を避けるため **browser-side (UI) で iterate** する設計。サーバ側
+ * (本関数) は ready のみを sync して、未検証は呼び元 (UI) が verify してから再 sync 起動。
+ *
+ * (Refs ohishi-exp/rust-ichibanboshi#43 — verify_jobs 永続化 + R2 gate)
  */
 export async function syncUriageR2(
   bucket: R2BucketLike,
@@ -107,6 +134,7 @@ export async function syncUriageR2(
     uploaded: 0,
     acked: 0,
     failures: [],
+    skipped: [],
   }
 
   // pending list
@@ -123,6 +151,20 @@ export async function syncUriageR2(
   const pending = (await pendingRes.json()) as R2PendingResponse
 
   for (const item of pending.items) {
+    // verify gate
+    if (!item.ready) {
+      const reason: 'unverified' | 'ng_present' = item.blocker === 'ng_present' ? 'ng_present' : 'unverified'
+      result.skipped.push({
+        month: item.month,
+        eigyosho_id: item.eigyosho_id,
+        reason,
+        verified_count: item.verified_count,
+        verified_ng: item.verified_ng,
+        expected_count: item.expected_count,
+      })
+      continue
+    }
+
     result.attempted++
     const r = await syncOne(item, bucket, rustFetch)
     if (r.uploaded) result.uploaded++
