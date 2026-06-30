@@ -824,6 +824,145 @@ async function runVerifyUnverifiedOnly() {
 onMounted(() => {
   void loadStatusSummary()
 })
+
+// ──────────────────────────────────────────────────────────────────
+// 行単位アクション (= 状態サマリ表の per-row ボタン、user 2026-06-30:
+// 「このへんどうしらいいの? → 各行にインラインアクション」)
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * verify ボタンを出して良い行か。
+ * - failed (= bumon empty 等) はそもそも verify 対象 0 なので出さない
+ * - 既に ✅ 全件検証済 (verified_count >= expected) も追加 verify 不要なので出さない
+ */
+function canVerifyRow(j: RecalcJobRow): boolean {
+  if (j.status === 'failed') return false
+  const count = j.verified_count ?? 0
+  const expected = daysInMonth(j.month) * 2
+  if (expected > 0 && count >= expected && (j.verified_ng ?? 0) === 0) return false
+  return true
+}
+
+/**
+ * R2 同期ボタンを出して良い行か。
+ * - r2_synced_at が立っている (= ✅ R2 同期済) なら不要
+ * - failed は対象外
+ * - NG ありは r2_pending view で gate されて sync skip されるが、UI ボタンは
+ *   出して動かしても問題ない (rust 側で skip 扱い)
+ */
+function canSyncRow(j: RecalcJobRow): boolean {
+  if (j.status === 'failed') return false
+  if (j.status === 'r2_synced') return false
+  return true
+}
+
+/**
+ * 1 行分 verify を実行 (= (j.month, j.eigyosho_id) の全 (date, cal) を verify)。
+ * 完了後に状態サマリを reload。
+ */
+async function runVerifyForRow(j: RecalcJobRow) {
+  if (running.value || r2SyncLoading.value) return
+  r2SyncLoading.value = true
+  r2SyncMsg.value = `🔍 ${j.month} / office=${j.eigyosho_id} verify 中…`
+  r2SyncResult.value = null
+  r2SyncPhase.value = 'verify'
+  try {
+    const days = expandDates(`${j.month}-01`, lastDayOf(j.month))
+    const nextRunId = currentRunId.value + 1
+    currentRunId.value = nextRunId
+    const verifyJobs: VerifyJob[] = []
+    for (const day of days) {
+      for (const cal of [true, false]) {
+        verifyJobs.push({
+          key: `${day}/${j.eigyosho_id}/${cal}#row-verify-run${nextRunId}`,
+          runId: nextRunId,
+          date: day,
+          officeId: j.eigyosho_id,
+          cal,
+          status: 'pending',
+        })
+      }
+    }
+    jobs.value = [...jobs.value, ...verifyJobs]
+    const startIdx = jobs.value.length - verifyJobs.length
+    const indices: number[] = []
+    for (let i = 0; i < verifyJobs.length; i++) indices.push(startIdx + i)
+    const conc = Math.min(16, Math.max(1, Math.floor(concurrency.value) || 1))
+    async function worker() {
+      while (indices.length > 0) {
+        const idx = indices.shift()
+        if (idx === undefined) break
+        const job = jobs.value[idx]
+        if (!job) break
+        await runOne(job)
+      }
+    }
+    const workers: Promise<void>[] = []
+    for (let i = 0; i < conc; i++) workers.push(worker())
+    await Promise.all(workers)
+    r2SyncPhase.value = 'done'
+    r2SyncMsg.value = `✅ ${j.month} / office=${j.eigyosho_id} verify 完了 (${verifyJobs.length} cells)。サマリ再 load…`
+    void loadStatusSummary()
+  } catch (e: unknown) {
+    const err = e as { statusCode?: number; statusMessage?: string }
+    r2SyncMsg.value = `❌ row verify 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+    r2SyncPhase.value = 'idle'
+  } finally {
+    r2SyncLoading.value = false
+  }
+}
+
+/**
+ * 1 行分 R2 同期を実行。UI from/to を当該 month に一時切り替え、既存 R2 同期
+ * orchestrator (verify-first) を再利用する。
+ *
+ * NOTE: rust の `/api/uriage/r2-sync` は (month, eigyosho_id) 単位の filter を
+ * 受けない (= ready 全件 sync する) ので、from/to を当該 month に切ると **同月の
+ * 他 office も pending なら一緒に sync される**。これは多くの場合むしろ望ましい
+ * 挙動 (= 月単位で揃って R2 へ上がる) なので明示的に許容する。
+ */
+async function runR2SyncForRow(j: RecalcJobRow) {
+  if (running.value || r2SyncLoading.value) return
+  const savedFrom = from.value
+  const savedTo = to.value
+  from.value = `${j.month}-01`
+  to.value = lastDayOf(j.month)
+  try {
+    await runR2SyncVerifyFirst()
+  } finally {
+    from.value = savedFrom
+    to.value = savedTo
+  }
+}
+
+/**
+ * 「🚀 2026-01〜今日 R2 一括同期」ボタン用。
+ *
+ * user 要望 (2026-06-30): 「2026-01 から同期できるように inline つくってね」
+ *
+ * UI 期間 (from/to) を一時的に `2026-01-01 〜 今日` に切り替えて
+ * `runR2SyncVerifyFirst` を呼ぶ。完了後 from/to を復元する。
+ *
+ * 状態サマリ panel に常駐させているので、from/to を手で動かさなくても 1 クリックで
+ * 「2026 年に入って以降の全 pending」を verify-first で R2 同期できる。
+ */
+async function runR2SyncFromYear2026() {
+  if (running.value || r2SyncLoading.value) return
+  const today = new Date()
+  const y = today.getUTCFullYear()
+  const mStr = String(today.getUTCMonth() + 1).padStart(2, '0')
+  const dStr = String(today.getUTCDate()).padStart(2, '0')
+  const savedFrom = from.value
+  const savedTo = to.value
+  from.value = '2026-01-01'
+  to.value = `${y}-${mStr}-${dStr}`
+  try {
+    await runR2SyncVerifyFirst()
+  } finally {
+    from.value = savedFrom
+    to.value = savedTo
+  }
+}
 </script>
 
 <template>
@@ -951,6 +1090,14 @@ onMounted(() => {
         <div class="flex items-center gap-3">
           <button
             :disabled="running || r2SyncLoading"
+            class="text-xs text-purple-700 border border-purple-300 hover:bg-purple-50 px-2 py-1 rounded font-normal disabled:opacity-50"
+            title="from を 2026-01-01 / to を今日に切り替えて、R2 同期 (verify-first) を実行"
+            @click="runR2SyncFromYear2026"
+          >
+            {{ r2SyncLoading ? '実行中…' : '🚀 2026-01〜今日 R2 一括同期' }}
+          </button>
+          <button
+            :disabled="running || r2SyncLoading"
             class="text-xs text-orange-700 border border-orange-300 hover:bg-orange-50 px-2 py-1 rounded font-normal disabled:opacity-50"
             title="UI 期間 (from/to) で blocker='unverified' な bucket を verify (R2 同期はしない)"
             @click="runVerifyUnverifiedOnly"
@@ -985,20 +1132,42 @@ onMounted(() => {
           <tr>
             <th class="px-2 py-1 text-left">month</th>
             <th class="px-2 py-1 text-left">office</th>
-            <th class="px-2 py-1 text-left">状態</th>
             <th class="px-2 py-1 text-left">検証 (PHP vs Rust)</th>
             <th class="px-2 py-1 text-left">computed_at</th>
             <th class="px-2 py-1 text-left">r2_synced_at</th>
+            <th class="px-2 py-1 text-left">状態</th>
+            <th class="px-2 py-1 text-left">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="j in summaryJobs" :key="`${j.month}/${j.eigyosho_id}`" class="border-b">
             <td class="px-2 py-1 font-mono">{{ j.month }}</td>
             <td class="px-2 py-1">{{ j.eigyosho_id }}</td>
-            <td class="px-2 py-1" :class="jobStatusLabel(j).cls">{{ jobStatusLabel(j).text }}</td>
             <td class="px-2 py-1" :class="verifyLabel(j).cls">{{ verifyLabel(j).text }}</td>
             <td class="px-2 py-1 text-gray-500 text-xs">{{ j.computed_at ?? '-' }}</td>
             <td class="px-2 py-1 text-gray-500 text-xs">{{ j.r2_synced_at ?? '-' }}</td>
+            <td class="px-2 py-1" :class="jobStatusLabel(j).cls">{{ jobStatusLabel(j).text }}</td>
+            <td class="px-2 py-1 whitespace-nowrap">
+              <button
+                v-if="canVerifyRow(j)"
+                :disabled="running || r2SyncLoading"
+                class="text-xs text-orange-700 border border-orange-300 hover:bg-orange-50 px-1.5 py-0.5 rounded mr-1 disabled:opacity-50"
+                :title="`${j.month} / office=${j.eigyosho_id} だけ verify (PHP vs Rust 突合)`"
+                @click="runVerifyForRow(j)"
+              >
+                🔍 verify
+              </button>
+              <button
+                v-if="canSyncRow(j)"
+                :disabled="running || r2SyncLoading"
+                class="text-xs text-purple-700 border border-purple-300 hover:bg-purple-50 px-1.5 py-0.5 rounded disabled:opacity-50"
+                :title="`${j.month} を R2 同期 (verify-first orchestrator)`"
+                @click="runR2SyncForRow(j)"
+              >
+                🚀 R2 同期
+              </button>
+              <span v-if="!canVerifyRow(j) && !canSyncRow(j)" class="text-gray-400">—</span>
+            </td>
           </tr>
         </tbody>
       </table>
