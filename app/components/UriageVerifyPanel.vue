@@ -62,6 +62,65 @@ const dryMsg = ref('')
 /** runAll が呼ばれるたびに ++、最新 run の job を絞るのに使う */
 const currentRunId = ref(0)
 
+// ── DB 履歴ロード state ──
+const historyLoading = ref(false)
+const historyMsg = ref('')
+
+// ── R2 同期 (verify-first) state ──
+const r2SyncLoading = ref(false)
+const r2SyncMsg = ref('')
+const r2SyncResult = ref<R2SyncResult | null>(null)
+
+interface R2PendingItem {
+  month: string
+  eigyosho_id: number
+  raw_path: string
+  fingerprint_after: string
+  computed_at: string
+  verified_count: number
+  verified_ok: number
+  verified_ng: number
+  expected_count: number
+  ready: boolean
+  blocker: 'ng_present' | 'unverified' | null
+}
+
+interface R2SyncResult {
+  attempted: number
+  uploaded: number
+  acked: number
+  failures: Array<{ month: string; eigyosho_id: number; stage: string; error: string }>
+  skipped: Array<{
+    month: string
+    eigyosho_id: number
+    reason: 'unverified' | 'ng_present'
+    verified_count: number
+    verified_ng: number
+    expected_count: number
+  }>
+}
+
+interface VerifyHistoryRow {
+  unko_date: string
+  eigyosho_id: number
+  cal: number
+  month: string
+  ok: number
+  skipped_reason: string | null
+  diff_json: string | null
+  row_count: number
+  elapsed_ms: number
+  ran_at: string
+}
+
+interface VerifyHistoryResponse {
+  from: string
+  to: string
+  eigyosho_id: number | null
+  count: number
+  rows: VerifyHistoryRow[]
+}
+
 /** 進捗バー / 完了サマリは現在 run のみカウント (履歴に積んだ過去 run は含めない) */
 const currentRunJobs = computed(() =>
   jobs.value.filter((j) => j.runId === currentRunId.value),
@@ -309,6 +368,177 @@ function clearHistory() {
   expandedKey.value = null
 }
 
+/**
+ * DB (verify_jobs) から履歴を取り出して jobs.value に流し込む。
+ * 同じ key の job があれば上書き (= 最新の DB 値を採用)。
+ */
+async function loadDbHistory() {
+  if (running.value) return
+  historyMsg.value = ''
+  historyLoading.value = true
+  try {
+    const params = new URLSearchParams({ from: from.value, to: to.value })
+    const offices = parseOffices(officesInput.value)
+    // eigyosho_id 単指定はサーバ側仕様 → 全 office 取得するなら指定しない
+    // 入力欄が 1 つだけなら絞る (UI 利便性)、それ以外は範囲取得
+    if (offices.length === 1) params.set('eigyosho_id', String(offices[0]))
+    const res = await $fetch<VerifyHistoryResponse>(
+      `/api/uriage/verify-history?${params.toString()}`,
+    )
+    // 既存 jobs と merge: 同じ key があれば上書き
+    const existing = new Map<string, VerifyJob>()
+    for (const j of jobs.value) existing.set(j.key, j)
+    let runId = currentRunId.value
+    runId++ // DB ロード分は別 runId に振る
+    currentRunId.value = runId
+    for (const r of res.rows) {
+      const calBool = r.cal === 1
+      const key = `${r.unko_date}/${r.eigyosho_id}/${calBool}#db-run${runId}`
+      const ok = r.ok === 1
+      let status: JobStatus = 'ok'
+      if (r.skipped_reason) status = 'skipped'
+      else if (!ok) status = 'ng'
+      // 簡易 response (diff_json を parse)
+      let diff: VerifyDiff | null = null
+      if (r.diff_json) {
+        try {
+          diff = JSON.parse(r.diff_json) as VerifyDiff
+        } catch {
+          diff = null
+        }
+      }
+      const job: VerifyJob = {
+        key,
+        runId,
+        date: r.unko_date,
+        officeId: r.eigyosho_id,
+        cal: calBool,
+        status,
+        response: {
+          office_id: r.eigyosho_id,
+          date: r.unko_date,
+          cal: calBool,
+          php_sum: {},
+          rust_sum: {},
+          diff,
+          ok,
+          row_count: r.row_count,
+          elapsed_ms: r.elapsed_ms,
+          skipped_reason: r.skipped_reason ?? undefined,
+        },
+        error: r.skipped_reason ? `(${r.skipped_reason}: ${r.ran_at})` : undefined,
+      }
+      existing.set(key, job)
+    }
+    jobs.value = Array.from(existing.values())
+    historyMsg.value = `✅ DB から ${res.count} 件の履歴をロードしました (run #${runId})`
+  } catch (e: unknown) {
+    const err = e as { statusCode?: number; statusMessage?: string }
+    historyMsg.value = `❌ 履歴ロード失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+/**
+ * R2 同期 (verify-first):
+ * 1. /api/uriage/r2/pending を取得
+ * 2. ready=true の bucket は即 sync 対象、blocker=unverified は browser-side で
+ *    iterate /verify、blocker=ng_present は skip
+ * 3. verify 完了後 /api/uriage/r2-sync を 1 回叩いて ready bucket をまとめて sync
+ *
+ * CF Workers の subrequest 上限 (1 invocation = 50 限) を避けるため、verify は
+ * **browser-side で 1 call = 1 worker invocation** に分散する。
+ */
+async function runR2SyncVerifyFirst() {
+  if (running.value || r2SyncLoading.value) return
+  r2SyncLoading.value = true
+  r2SyncMsg.value = ''
+  r2SyncResult.value = null
+  try {
+    // 1. pending list
+    const pendingRes = await $fetch<{ count: number; items: R2PendingItem[] }>(
+      '/api/uriage/r2-pending',
+    )
+    const unverified = pendingRes.items.filter((i) => i.blocker === 'unverified')
+    const ngPresent = pendingRes.items.filter((i) => i.blocker === 'ng_present')
+    const readyCount = pendingRes.items.filter((i) => i.ready).length
+    r2SyncMsg.value =
+      `pending: ${pendingRes.count} (ready=${readyCount}, unverified=${unverified.length}, ng_present=${ngPresent.length})`
+
+    // 2. unverified bucket を verify (browser-side iterate)
+    if (unverified.length > 0) {
+      const nextRunId = currentRunId.value + 1
+      currentRunId.value = nextRunId
+      const verifyJobs: VerifyJob[] = []
+      for (const item of unverified) {
+        const days = expandDates(`${item.month}-01`, lastDayOf(item.month))
+        for (const day of days) {
+          for (const cal of [true, false]) {
+            verifyJobs.push({
+              key: `${day}/${item.eigyosho_id}/${cal}#sync-run${nextRunId}`,
+              runId: nextRunId,
+              date: day,
+              officeId: item.eigyosho_id,
+              cal,
+              status: 'pending',
+            })
+          }
+        }
+      }
+      jobs.value = [...jobs.value, ...verifyJobs]
+      // 既存 jobs.value 経由で worker が proxied item を mutate するように
+      const startIdx = jobs.value.length - verifyJobs.length
+      const indices: number[] = []
+      for (let i = 0; i < verifyJobs.length; i++) indices.push(startIdx + i)
+      const conc = Math.min(16, Math.max(1, Math.floor(concurrency.value) || 1))
+      async function worker() {
+        while (indices.length > 0) {
+          const idx = indices.shift()
+          if (idx === undefined) break
+          const job = jobs.value[idx]
+          if (!job) break
+          await runOne(job)
+        }
+      }
+      const workers: Promise<void>[] = []
+      for (let i = 0; i < conc; i++) workers.push(worker())
+      await Promise.all(workers)
+      r2SyncMsg.value += ` → verify 完了 (${verifyJobs.length} cells)`
+    }
+
+    // 3. ng_present は skip 警告だけ
+    if (ngPresent.length > 0) {
+      r2SyncMsg.value += ` / NG bucket は skip (要 fix)`
+    }
+
+    // 4. ready bucket をまとめて sync
+    const syncRes = await $fetch<R2SyncResult>('/api/uriage/r2-sync', { method: 'POST' })
+    r2SyncResult.value = syncRes
+    r2SyncMsg.value += ` → R2 sync: uploaded=${syncRes.uploaded}/${syncRes.attempted}`
+    if (syncRes.skipped.length > 0) {
+      r2SyncMsg.value += ` / skipped=${syncRes.skipped.length}`
+    }
+  } catch (e: unknown) {
+    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
+    const dataMsg =
+      typeof err.data === 'string' ? err.data : err.data ? JSON.stringify(err.data) : ''
+    r2SyncMsg.value = `❌ R2 同期失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
+  } finally {
+    r2SyncLoading.value = false
+  }
+}
+
+/** YYYY-MM → "YYYY-MM-DD" (月末日) */
+function lastDayOf(month: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(month)
+  if (!m) return `${month}-01`
+  const y = parseInt(m[1], 10)
+  const mm = parseInt(m[2], 10)
+  const last = new Date(Date.UTC(y, mm, 0))
+  return `${y}-${String(mm).padStart(2, '0')}-${String(last.getUTCDate()).padStart(2, '0')}`
+}
+
 function toggleDetail(key: string) {
   expandedKey.value = expandedKey.value === key ? null : key
 }
@@ -433,10 +663,43 @@ if (!from.value || !to.value) setDefaultRange()
         >
           停止 (残 pending を skip)
         </button>
+        <button
+          :disabled="running || historyLoading"
+          class="bg-amber-600 text-white px-3 py-2 rounded text-sm hover:bg-amber-700 disabled:bg-gray-400"
+          @click="loadDbHistory"
+          title="verify_jobs (rust SQLite) から検証履歴を取得して表に反映"
+        >
+          {{ historyLoading ? 'ロード中…' : '📜 DB 履歴をロード' }}
+        </button>
+        <button
+          :disabled="running || r2SyncLoading"
+          class="bg-purple-600 text-white px-3 py-2 rounded text-sm hover:bg-purple-700 disabled:bg-gray-400"
+          @click="runR2SyncVerifyFirst"
+          title="未検証 bucket を verify してから R2 sync (verify-first orchestrator)"
+        >
+          {{ r2SyncLoading ? 'R2 同期中…' : '🚀 R2 同期 (verify-first)' }}
+        </button>
       </div>
 
       <div v-if="dryMsg" class="text-orange-700 bg-orange-50 border border-orange-200 rounded px-3 py-2 text-sm">
         {{ dryMsg }}
+      </div>
+      <div v-if="historyMsg" class="text-sm whitespace-pre-wrap" :class="historyMsg.startsWith('❌') ? 'text-red-700' : 'text-green-700'">
+        {{ historyMsg }}
+      </div>
+      <div v-if="r2SyncMsg" class="text-sm whitespace-pre-wrap text-purple-800 bg-purple-50 border border-purple-200 rounded px-3 py-2">
+        🚀 {{ r2SyncMsg }}
+      </div>
+      <div v-if="r2SyncResult" class="text-xs text-gray-700">
+        attempted={{ r2SyncResult.attempted }} uploaded={{ r2SyncResult.uploaded }}
+        acked={{ r2SyncResult.acked }} failures={{ r2SyncResult.failures.length }}
+        skipped={{ r2SyncResult.skipped.length }}
+        <ul v-if="r2SyncResult.skipped.length > 0" class="list-disc pl-5 mt-1 text-gray-600">
+          <li v-for="(s, i) in r2SyncResult.skipped" :key="i">
+            {{ s.month }} / office={{ s.eigyosho_id }} → {{ s.reason }}
+            (verified={{ s.verified_count }}/{{ s.expected_count }}, ng={{ s.verified_ng }})
+          </li>
+        </ul>
       </div>
     </div>
 
