@@ -647,6 +647,18 @@ function jobStatusLabel(j: RecalcJobRow): { text: string; cls: string } {
   return { text: j.status, cls: 'text-gray-600' }
 }
 
+/**
+ * cal フラグ → 日本語ラベル (user 2026-06-30 「cal の true/false わかりずらい」)。
+ *
+ * - cal=true  → 振替反映 (担当者振替 A→B を反映済みの集計)
+ * - cal=false → 振替前   (担当者振替 適用なしの生集計)
+ *
+ * API param 名は `cal` のまま (PHP `/print-json?cal=1` 互換)、UI 表記だけ日本語化。
+ */
+function calLabel(cal: boolean): string {
+  return cal ? '振替反映' : '振替前'
+}
+
 /** YYYY-MM の日数 (UTC で月末日を取る) */
 function daysInMonth(month: string): number {
   const m = /^(\d{4})-(\d{2})$/.exec(month)
@@ -1009,11 +1021,11 @@ async function runR2SyncFromYear2026() {
           />
         </div>
         <div>
-          <label class="block text-xs text-gray-500">cal</label>
+          <label class="block text-xs text-gray-500" title="cal=true は担当者振替を反映した売上、cal=false は振替前の生集計">担当者振替</label>
           <select v-model="calMode" :disabled="running" class="border rounded px-2 py-1 text-sm">
-            <option value="both">両方 (true + false)</option>
-            <option value="true">true のみ</option>
-            <option value="false">false のみ</option>
+            <option value="both">両方 (振替反映 + 振替前)</option>
+            <option value="true">振替反映のみ (cal=true)</option>
+            <option value="false">振替前のみ (cal=false)</option>
           </select>
         </div>
         <div>
@@ -1232,7 +1244,7 @@ async function runR2SyncFromYear2026() {
             <th class="px-3 py-2 text-left">run</th>
             <th class="px-3 py-2 text-left">date</th>
             <th class="px-3 py-2 text-left">office</th>
-            <th class="px-3 py-2 text-left">cal</th>
+            <th class="px-3 py-2 text-left" title="cal=true: 振替反映 (A→B 適用後) / cal=false: 振替前 (生)">担当者振替</th>
             <th class="px-3 py-2 text-right">rows</th>
             <th class="px-3 py-2 text-right">elapsed</th>
             <th class="px-3 py-2 text-left">detail</th>
@@ -1244,7 +1256,7 @@ async function runR2SyncFromYear2026() {
               <td class="px-3 py-2 text-gray-500">#{{ j.runId }}</td>
               <td class="px-3 py-2 font-mono">{{ j.date }}</td>
               <td class="px-3 py-2">{{ j.officeId }}</td>
-              <td class="px-3 py-2">{{ j.cal }}</td>
+              <td class="px-3 py-2" :title="`cal=${j.cal}`">{{ calLabel(j.cal) }}</td>
               <td class="px-3 py-2 text-right">{{ j.response?.row_count ?? '-' }}</td>
               <td class="px-3 py-2 text-right text-gray-500">{{ j.response?.elapsed_ms ?? '-' }} ms</td>
               <td class="px-3 py-2">
@@ -1321,7 +1333,7 @@ async function runR2SyncFromYear2026() {
       <div class="font-semibold text-base mb-2 text-orange-700">⚠ ERR ({{ errJobs.length }}、履歴含む)</div>
       <ul class="text-xs text-orange-700 list-disc pl-5">
         <li v-for="j in errJobs" :key="j.key">
-          #{{ j.runId }} {{ j.date }} / office={{ j.officeId }} / cal={{ j.cal }}: {{ j.error }}
+          #{{ j.runId }} {{ j.date }} / office={{ j.officeId }} / {{ calLabel(j.cal) }} (cal={{ j.cal }}): {{ j.error }}
         </li>
       </ul>
     </div>
