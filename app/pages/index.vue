@@ -254,6 +254,13 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
           >
             🔧 /admin/recalc
           </NuxtLink>
+          <NuxtLink
+            to="/unchin"
+            class="text-sm text-blue-600 hover:underline no-print"
+            title="得意先・傭車先別の運賃リスト（値上げ履歴管理）"
+          >
+            🚚 運賃リスト
+          </NuxtLink>
         </div>
         <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
       </div>
