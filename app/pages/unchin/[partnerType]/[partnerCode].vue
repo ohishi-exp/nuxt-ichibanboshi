@@ -102,6 +102,15 @@ function toggleGroupSelection(index: number) {
   if (next.has(index)) next.delete(index)
   else next.add(index)
   selectedForGroup.value = next
+  if (next.size === 0) {
+    // 選択を全解除したら次回用にクリア
+    groupLabel.value = ''
+  } else if (!groupLabel.value.trim()) {
+    // 表示名が未入力なら、最初に選んだ行の品目名をデフォルトで入れる
+    // (せっかく行を選んでいるのに毎回手入力させない、#57 follow-up)
+    const firstIndex = Math.min(...next)
+    groupLabel.value = items.value[firstIndex]?.item_name || items.value[firstIndex]?.item_code || ''
+  }
 }
 
 const selectedDistinctItemCodes = computed(() => {
@@ -490,7 +499,7 @@ function periodTitle(minDate: string | undefined, maxDate: string | undefined): 
             </button>
             <button
               class="text-xs text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100"
-              @click="selectedForGroup = new Set()"
+              @click="selectedForGroup = new Set(); groupLabel = ''"
             >
               選択解除
             </button>

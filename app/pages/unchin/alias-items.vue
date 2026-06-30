@@ -49,6 +49,17 @@ const filteredOptions = computed(() => {
   return itemOptions.value.filter(o => o.item_code.includes(q) || o.item_name.includes(q))
 })
 
+// チェックを入れたのに毎回手入力させないよう、表示名が未入力なら最初に選んだ
+// 品名コードの品目名をデフォルトで入れる (#57 follow-up)。全解除したらクリアする。
+watch(selectedCodes, (codes) => {
+  if (codes.length === 0) {
+    newLabel.value = ''
+  } else if (!newLabel.value.trim()) {
+    const first = itemOptions.value.find(o => o.item_code === codes[0])
+    newLabel.value = first?.item_name || first?.item_code || ''
+  }
+})
+
 async function loadGroups() {
   const res = await $fetch<AliasGroupsResponse>('/api/unchin/alias/items')
   groups.value = res.groups
