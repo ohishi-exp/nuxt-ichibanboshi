@@ -699,8 +699,77 @@ function lastDayOf(month: string): string {
   return `${y}-${String(mm).padStart(2, '0')}-${String(last.getUTCDate()).padStart(2, '0')}`
 }
 
+// ──────────────────────────────────────────────────────────────────
+// verify-debug (raw rows + decisions + 売上年月日) lazy fetch
+// rust-ichibanboshi#54, user 2026-06-30 「NG のとこにだせば?」「売上年月日とってるか確認できる?」
+// ──────────────────────────────────────────────────────────────────
+
+interface VerifyDebugRow {
+  yokoyoko: number
+  seikyu_k: number
+  biko2: string
+  nyuryoku_tanto_c: number
+  kado_bumon: string
+  kingaku: number
+  nebiki: number
+  warimashi: number
+  jippi: number
+  yosha_kingaku: number
+  yosha_nebiki: number
+  yosha_warimashi: number
+  yosha_jippi: number
+  shain_r: string
+  yosha_saki_c: string
+  /** 運行年月日 (Rust の WHERE フィルタ) */
+  unko_date: string
+  /** 売上年月日 (月計テーブル一致条件) */
+  uriage_date: string
+  decision: { skip: boolean; ck: boolean; matched: boolean; tanto: string }
+}
+
+interface VerifyDebugResponse {
+  office_id: number
+  date: string
+  cal: boolean
+  bumon: string[]
+  persons: Record<string, string>
+  other: Record<string, string>
+  rows: VerifyDebugRow[]
+  php_sum: Record<string, PersonAccum>
+  rust_sum: Record<string, PersonAccum>
+}
+
+// key = job.key、debug data / loading / error を per-row で持つ
+const debugData = ref<Record<string, VerifyDebugResponse | undefined>>({})
+const debugLoading = ref<Record<string, boolean>>({})
+const debugError = ref<Record<string, string>>({})
+
+async function fetchDebugForJob(j: VerifyJob) {
+  if (debugData.value[j.key] || debugLoading.value[j.key]) return
+  debugLoading.value[j.key] = true
+  debugError.value[j.key] = ''
+  try {
+    const res = await $fetch<VerifyDebugResponse>(
+      `/api/uriage/verify-debug?id=${j.officeId}&date=${j.date}&cal=${j.cal}`,
+    )
+    debugData.value[j.key] = res
+  } catch (e: unknown) {
+    const err = e as { statusCode?: number; statusMessage?: string }
+    debugError.value[j.key] = `❌ ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+  } finally {
+    debugLoading.value[j.key] = false
+  }
+}
+
 function toggleDetail(key: string) {
-  expandedKey.value = expandedKey.value === key ? null : key
+  const newKey = expandedKey.value === key ? null : key
+  expandedKey.value = newKey
+  if (newKey) {
+    // 展開時に該当 NG job の verify-debug を lazy fetch (= rust-ichibanboshi#54 はまだ
+    // deploy 中の可能性もあるので失敗は debugError に表示するだけで画面は壊さない)
+    const job = ngJobs.value.find((j) => j.key === newKey)
+    if (job) void fetchDebugForJob(job)
+  }
 }
 
 function fmtYen(n: number): string {
@@ -1269,7 +1338,7 @@ async function runR2SyncFromYear2026() {
               </td>
             </tr>
             <tr v-if="expandedKey === j.key && j.response" class="bg-gray-50 border-b">
-              <td colspan="7" class="px-3 py-3">
+              <td colspan="7" class="px-3 py-3 space-y-3">
                 <div class="grid grid-cols-2 gap-4">
                   <div>
                     <div class="text-xs font-semibold text-red-700 mb-1">php_only</div>
@@ -1317,6 +1386,61 @@ async function runR2SyncFromYear2026() {
                           <td class="px-2 py-1 text-right">{{ fmtYen(v.金額) }}</td>
                           <td class="px-2 py-1 text-right">{{ fmtYen(v.傭車金額) }}</td>
                           <td class="px-2 py-1 text-right">{{ v.件数 }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- raw rows (verify-debug) — rust-ichibanboshi#54、user 2026-06-30
+                     「NG のとこにだせば?」「売上年月日とってるか確認できる?」 -->
+                <div>
+                  <div class="text-xs font-semibold text-gray-700 mb-1 flex items-center gap-2">
+                    <span>🔬 verify-debug (raw rows + 売上年月日)</span>
+                    <span v-if="debugLoading[j.key]" class="text-gray-500">読み込み中…</span>
+                    <span v-if="debugError[j.key]" class="text-red-700">{{ debugError[j.key] }}</span>
+                  </div>
+                  <div v-if="debugData[j.key]" class="text-xs">
+                    <div class="text-gray-600 mb-2">
+                      bumon: <code class="font-mono">[{{ debugData[j.key]!.bumon.join(', ') }}]</code>
+                      / persons: {{ Object.keys(debugData[j.key]!.persons).length }} 名
+                      / other: {{ Object.keys(debugData[j.key]!.other).length }} 部門
+                    </div>
+                    <table class="min-w-full text-xs border">
+                      <thead class="bg-gray-100">
+                        <tr>
+                          <th class="px-2 py-1 text-left">運行年月日</th>
+                          <th class="px-2 py-1 text-left text-orange-700" title="月計テーブル一致条件はこちら。Rust の WHERE フィルタとズレてないか確認">売上年月日</th>
+                          <th class="px-2 py-1 text-left">横横</th>
+                          <th class="px-2 py-1 text-left">請求K</th>
+                          <th class="px-2 py-1 text-left">入力担当C</th>
+                          <th class="px-2 py-1 text-left">稼動部門</th>
+                          <th class="px-2 py-1 text-left">傭車先C</th>
+                          <th class="px-2 py-1 text-right">金額</th>
+                          <th class="px-2 py-1 text-right">傭車金額</th>
+                          <th class="px-2 py-1 text-left">備考2</th>
+                          <th class="px-2 py-1 text-left">→ tanto (Rust)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="(r, idx) in debugData[j.key]!.rows" :key="idx" class="border-t">
+                          <td class="px-2 py-1 font-mono">{{ r.unko_date }}</td>
+                          <td
+                            class="px-2 py-1 font-mono"
+                            :class="r.unko_date !== r.uriage_date ? 'text-orange-700 font-semibold' : ''"
+                            :title="r.unko_date !== r.uriage_date ? '運行年月日と売上年月日が違う行 (= verify NG 原因候補)' : ''"
+                          >
+                            {{ r.uriage_date || '-' }}
+                          </td>
+                          <td class="px-2 py-1">{{ r.yokoyoko }}</td>
+                          <td class="px-2 py-1">{{ r.seikyu_k }}</td>
+                          <td class="px-2 py-1">{{ r.nyuryoku_tanto_c }}</td>
+                          <td class="px-2 py-1 font-mono">{{ r.kado_bumon }}</td>
+                          <td class="px-2 py-1 font-mono">{{ r.yosha_saki_c }}</td>
+                          <td class="px-2 py-1 text-right">{{ fmtYen(r.kingaku) }}</td>
+                          <td class="px-2 py-1 text-right">{{ fmtYen(r.yosha_kingaku) }}</td>
+                          <td class="px-2 py-1">{{ r.biko2 || '-' }}</td>
+                          <td class="px-2 py-1">{{ r.decision.tanto || '(skip)' }}</td>
                         </tr>
                       </tbody>
                     </table>
