@@ -78,6 +78,54 @@ const effectiveFrom = ref(new Date().toISOString().slice(0, 10))
 const registerMsg = ref('')
 
 /**
+ * 品名グルーピングをこの画面から直接登録する (inline)。`/unchin/alias-items` に
+ * 移動して品名コードを再検索する手間を省く — このページは既に品名コードと品目名を
+ * 一覧表示しているため、行を選んでそのまま登録できた方が早い (#57 follow-up)。
+ * 既に alias でまとまっている行 (`item_code` が `alias:` prefix) は選択不可。
+ */
+const selectedForGroup = ref<Set<string>>(new Set())
+const groupLabel = ref('')
+const grouping = ref(false)
+const groupMsg = ref('')
+
+function toggleGroupSelection(itemCode: string) {
+  const next = new Set(selectedForGroup.value)
+  if (next.has(itemCode)) next.delete(itemCode)
+  else next.add(itemCode)
+  selectedForGroup.value = next
+}
+
+async function createGroupFromSelection() {
+  grouping.value = true
+  groupMsg.value = ''
+  try {
+    const itemCodes = Array.from(selectedForGroup.value)
+    if (!groupLabel.value.trim() || itemCodes.length < 2) {
+      groupMsg.value = '表示名と2件以上の品名コードを選択してください'
+      return
+    }
+    await $fetch('/api/unchin/alias/items', {
+      method: 'POST',
+      body: { label: groupLabel.value.trim(), item_codes: itemCodes },
+    })
+    groupMsg.value = '✅ グルーピングを登録しました'
+    selectedForGroup.value = new Set()
+    groupLabel.value = ''
+    // alias 反映後の表示に更新
+    if (selectedVersionId.value === LIVE_VERSION) {
+      await loadLiveCandidates()
+    } else {
+      await loadVersionDetail(selectedVersionId.value)
+    }
+  } catch (e: unknown) {
+    const err = e as { statusCode?: number, statusMessage?: string }
+    groupMsg.value = `❌ エラー: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+  } finally {
+    grouping.value = false
+  }
+}
+
+/**
  * ライブ候補 (rust から都度抽出してグルーピングしたもの) を取得し、このページの
  * partner_code に絞り込む。バージョン未登録の取引先でもページに何か表示される
  * ようにするための fallback (Refs ohishi-exp/rust-ichibanboshi#57)。
@@ -245,9 +293,14 @@ function printList() {
             ⚠ 得意先コードでまとめ表示中（支店違いを合算、opt-in）。同一品目・同一運賃でも
             得意先H違いで品名コードが分かれている場合があります。
           </p>
+          <p class="text-xs text-gray-400 mb-2 no-print">
+            チェックボックスで品名コードを選んで「グルーピング」すると、同一品目として
+            まとめて表示できます（表示名一致による自動マージはしません。手動登録のみ）。
+          </p>
           <table class="w-full text-sm">
             <thead class="border-b text-gray-500">
               <tr>
+                <th class="text-left py-1 no-print" />
                 <th class="text-left py-1">品目</th>
                 <th class="text-left py-1 no-print">品名C</th>
                 <th class="text-right py-1">運賃</th>
@@ -258,6 +311,14 @@ function printList() {
             </thead>
             <tbody>
               <tr v-for="(it, i) in items" :key="i" class="border-b border-gray-100">
+                <td class="py-1 no-print">
+                  <input
+                    v-if="!it.item_code.startsWith('alias:')"
+                    type="checkbox"
+                    :checked="selectedForGroup.has(it.item_code)"
+                    @change="toggleGroupSelection(it.item_code)"
+                  >
+                </td>
                 <td class="py-1">{{ it.item_name || it.item_code || '(品目未設定)' }}</td>
                 <td class="py-1 text-xs text-gray-400 no-print">{{ it.item_code || '?' }}</td>
                 <td class="py-1 text-right font-semibold">{{ fmtYen(it.fare) }}</td>
@@ -271,19 +332,38 @@ function printList() {
                   <span
                     v-for="(r, ri) in it.routes"
                     :key="ri"
-                    class="inline-block mr-2 mb-1 px-2 py-0.5 bg-gray-100 rounded text-xs"
+                    class="block w-fit mb-1 px-2 py-0.5 bg-gray-100 rounded text-xs whitespace-nowrap"
                   >
                     {{ r.origin || '?' }} → {{ r.dest || '?' }}
                   </span>
                 </td>
               </tr>
               <tr v-if="items.length === 0">
-                <td colspan="6" class="py-6 text-center text-gray-400">
+                <td colspan="7" class="py-6 text-center text-gray-400">
                   該当期間に運賃データがありません（期間・請求区分を変更してみてください）
                 </td>
               </tr>
             </tbody>
           </table>
+
+          <div v-if="selectedForGroup.size > 0" class="mt-3 pt-3 border-t flex items-end gap-3 flex-wrap no-print">
+            <div>
+              <label class="block text-xs text-gray-500">表示名（まとめた後の品目名）</label>
+              <input v-model="groupLabel" type="text" class="border rounded px-2 py-1 text-sm" placeholder="例: 精製原料輸送">
+            </div>
+            <span class="text-xs text-gray-500">選択中: {{ selectedForGroup.size }} 件の品名コード</span>
+            <button
+              :disabled="grouping"
+              class="bg-orange-600 text-white px-4 py-1 rounded text-sm hover:bg-orange-700 disabled:bg-gray-400"
+              @click="createGroupFromSelection"
+            >
+              {{ grouping ? '登録中…' : 'グルーピングを登録' }}
+            </button>
+            <button class="text-xs text-gray-500 hover:underline" @click="selectedForGroup = new Set()">
+              選択解除
+            </button>
+          </div>
+          <div v-if="groupMsg" class="mt-2 text-sm whitespace-pre-wrap no-print">{{ groupMsg }}</div>
         </div>
 
         <div class="bg-white rounded-lg shadow p-4 no-print">
