@@ -157,18 +157,26 @@ const option = computed(() => {
       max: 100,
       axisLabel: { formatter: (v: number) => `${v}%` },
     },
-    series: d.series.map((s, i) => ({
-      name: s.name,
-      type: 'line',
-      stack: 'share',
-      areaStyle: { opacity: 0.7 },
-      lineStyle: { width: 1, color: colors[i % colors.length] },
-      itemStyle: { color: colors[i % colors.length] },
-      data: s.values,
-      symbol: 'circle',
-      symbolSize: 4,
-      emphasis: { focus: 'series' },
-    })),
+    // ECharts の stack は series 配列順で「下→上」に積む。
+    // chartData.series は期間合計の大きい順 (legend 表示順) なので、
+    // そのまま積むと最大シェアが最下部に来る (= legend 1 位 vs chart 最下段で逆順に
+    // 見える、user 2026-06-30 「順番が逆 タイトル？人名の順番合わせて」)。
+    // legend と stack の見た目を一致させるため、series を reverse して「大きい順に上」に積む。
+    // 各 series の色は legend 順 (= 元 i) に紐付けたまま reverse する。
+    series: d.series
+      .map((s, i) => ({
+        name: s.name,
+        type: 'line' as const,
+        stack: 'share',
+        areaStyle: { opacity: 0.7 },
+        lineStyle: { width: 1, color: colors[i % colors.length] },
+        itemStyle: { color: colors[i % colors.length] },
+        data: s.values,
+        symbol: 'circle' as const,
+        symbolSize: 4,
+        emphasis: { focus: 'series' as const },
+      }))
+      .reverse(),
   }
 })
 </script>
