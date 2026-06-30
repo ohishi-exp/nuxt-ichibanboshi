@@ -34,6 +34,8 @@ type JobStatus = 'pending' | 'running' | 'ok' | 'ng' | 'err' | 'skipped'
 
 interface VerifyJob {
   key: string
+  /** 同一 (date, office, cal) を別 run で再検証した時に区別するための単調増加 id */
+  runId: number
   date: string
   officeId: number
   cal: boolean
@@ -43,6 +45,7 @@ interface VerifyJob {
 }
 
 // ── 入力 state ──
+const monthInput = ref('') // YYYY-MM、変更で from/to を月初〜月末に自動セット
 const from = ref('')
 const to = ref('')
 const officesInput = ref('1,2,3,4,5,6,7,8,9,10,11,12,13,14,15')
@@ -54,10 +57,17 @@ const jobs = ref<VerifyJob[]>([])
 const running = ref(false)
 const expandedKey = ref<string | null>(null)
 const dryMsg = ref('')
+/** runAll が呼ばれるたびに ++、最新 run の job を絞るのに使う */
+const currentRunId = ref(0)
+
+/** 進捗バー / 完了サマリは現在 run のみカウント (履歴に積んだ過去 run は含めない) */
+const currentRunJobs = computed(() =>
+  jobs.value.filter((j) => j.runId === currentRunId.value),
+)
 
 const counts = computed(() => {
   const c = {
-    total: jobs.value.length,
+    total: currentRunJobs.value.length,
     done: 0,
     ok: 0,
     ng: 0,
@@ -66,7 +76,7 @@ const counts = computed(() => {
     pending: 0,
     running: 0,
   }
-  for (const j of jobs.value) {
+  for (const j of currentRunJobs.value) {
     if (j.status === 'ok') {
       c.ok++
       c.done++
@@ -93,8 +103,51 @@ const progress = computed(() => {
   return Math.round((counts.value.done / counts.value.total) * 100)
 })
 
+/** NG / ERR は全 run 横断で見られる方が運用上便利なので jobs 全体から拾う */
 const ngJobs = computed(() => jobs.value.filter((j) => j.status === 'ng'))
 const errJobs = computed(() => jobs.value.filter((j) => j.status === 'err'))
+
+interface RunSummary {
+  runId: number
+  range: string // "from 〜 to" (run の最小日〜最大日)
+  total: number
+  ok: number
+  ng: number
+  err: number
+  skipped: number
+  running: number
+}
+
+/** run ごとの集計を新しい順に並べる (履歴一覧表示用)。 */
+const runSummaries = computed<RunSummary[]>(() => {
+  const byRun = new Map<number, VerifyJob[]>()
+  for (const j of jobs.value) {
+    if (!byRun.has(j.runId)) byRun.set(j.runId, [])
+    byRun.get(j.runId)!.push(j)
+  }
+  const result: RunSummary[] = []
+  for (const [runId, list] of byRun.entries()) {
+    let ok = 0
+    let ng = 0
+    let err = 0
+    let skipped = 0
+    let running = 0
+    let minDate = ''
+    let maxDate = ''
+    for (const j of list) {
+      if (j.status === 'ok') ok++
+      else if (j.status === 'ng') ng++
+      else if (j.status === 'err') err++
+      else if (j.status === 'skipped') skipped++
+      else if (j.status === 'running' || j.status === 'pending') running++
+      if (!minDate || j.date < minDate) minDate = j.date
+      if (!maxDate || j.date > maxDate) maxDate = j.date
+    }
+    const range = minDate === maxDate ? minDate : `${minDate} 〜 ${maxDate}`
+    result.push({ runId, range, total: list.length, ok, ng, err, skipped, running })
+  }
+  return result.sort((a, b) => b.runId - a.runId)
+})
 
 function parseOffices(input: string): number[] {
   return input
@@ -116,7 +169,7 @@ function expandDates(fromStr: string, toStr: string): string[] {
   return result
 }
 
-function expandJobs(): VerifyJob[] {
+function expandJobs(runId: number): VerifyJob[] {
   const dates = expandDates(from.value, to.value)
   const offices = parseOffices(officesInput.value)
   const cals: boolean[] =
@@ -126,7 +179,8 @@ function expandJobs(): VerifyJob[] {
     for (const officeId of offices) {
       for (const cal of cals) {
         result.push({
-          key: `${date}/${officeId}/${cal}`,
+          key: `${date}/${officeId}/${cal}#run${runId}`,
+          runId,
           date,
           officeId,
           cal,
@@ -162,17 +216,19 @@ async function runOne(job: VerifyJob): Promise<void> {
 
 async function runAll() {
   dryMsg.value = ''
-  const expanded = expandJobs()
+  const nextRunId = currentRunId.value + 1
+  const expanded = expandJobs(nextRunId)
   if (expanded.length === 0) {
     dryMsg.value = '対象が空です (日付範囲 / 営業所を確認してください)'
-    jobs.value = []
     return
   }
-  jobs.value = expanded
+  currentRunId.value = nextRunId
+  // 過去 run は履歴として残し、新しい run を末尾に append
+  jobs.value = [...jobs.value, ...expanded]
   running.value = true
   expandedKey.value = null
 
-  const queue = [...jobs.value]
+  const queue = expanded.slice()
   async function worker() {
     while (queue.length > 0) {
       const job = queue.shift()
@@ -189,10 +245,18 @@ async function runAll() {
 }
 
 function stop() {
-  for (const j of jobs.value) {
+  // 現在 run の pending のみ skip (過去 run はもう触らない)
+  for (const j of currentRunJobs.value) {
     if (j.status === 'pending') j.status = 'skipped'
   }
   running.value = false
+}
+
+function clearHistory() {
+  if (running.value) return
+  jobs.value = []
+  currentRunId.value = 0
+  expandedKey.value = null
 }
 
 function toggleDetail(key: string) {
@@ -212,7 +276,38 @@ function setDefaultRange() {
   const dStr = String(d).padStart(2, '0')
   from.value = `${y}-${mStr}-01`
   to.value = `${y}-${mStr}-${dStr}`
+  monthInput.value = `${y}-${mStr}`
 }
+
+/**
+ * 月セレクタ (`<input type="month">`) の値が変わったら from/to を月初〜月末
+ * に自動セット。当月は「今日まで」で打ち止め (未到来の日は無意味)。
+ */
+function applyMonth(ym: string) {
+  if (!/^\d{4}-\d{2}$/.test(ym)) return
+  const [yStr, mStr] = ym.split('-')
+  const y = parseInt(yStr, 10)
+  const m = parseInt(mStr, 10)
+  if (isNaN(y) || isNaN(m) || m < 1 || m > 12) return
+  // 月末 = 翌月 0 日
+  const last = new Date(Date.UTC(y, m, 0))
+  const lastDay = last.getUTCDate()
+  const lastStr = `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`
+  // 当月なら今日で打ち止め
+  const today = new Date()
+  const ty = today.getUTCFullYear()
+  const tm = today.getUTCMonth() + 1
+  const td = today.getUTCDate()
+  const isCurrentMonth = y === ty && m === tm
+  from.value = `${y}-${mStr}-01`
+  to.value = isCurrentMonth
+    ? `${y}-${mStr}-${String(td).padStart(2, '0')}`
+    : lastStr
+}
+
+watch(monthInput, (v) => {
+  if (v) applyMonth(v)
+})
 
 if (!from.value || !to.value) setDefaultRange()
 </script>
@@ -228,6 +323,16 @@ if (!from.value || !to.value) setDefaultRange()
       </div>
 
       <div class="flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-xs text-gray-500">月で選ぶ (YYYY-MM)</label>
+          <input
+            v-model="monthInput"
+            type="month"
+            :disabled="running"
+            class="border rounded px-2 py-1 text-sm"
+            title="変更で from/to を月初〜月末に自動セット (当月は今日まで)"
+          />
+        </div>
         <div>
           <label class="block text-xs text-gray-500">from (YYYY-MM-DD)</label>
           <input v-model="from" type="date" :disabled="running" class="border rounded px-2 py-1 text-sm" />
@@ -286,15 +391,24 @@ if (!from.value || !to.value) setDefaultRange()
     </div>
 
     <div v-if="counts.total > 0" class="bg-white rounded-lg shadow p-4 space-y-3">
-      <div class="text-sm">
-        <span class="text-gray-500">進捗:</span>
-        <strong class="ml-2">{{ counts.done }} / {{ counts.total }}</strong>
-        ({{ progress }} %)
-        —
-        <span class="ml-2 text-green-700">OK={{ counts.ok }}</span>
-        <span class="ml-2 text-red-700">NG={{ counts.ng }}</span>
-        <span class="ml-2 text-orange-700">ERR={{ counts.err }}</span>
-        <span class="ml-2 text-gray-500">skipped={{ counts.skipped }}</span>
+      <div class="text-sm flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <span class="text-gray-500">進捗 (run #{{ currentRunId }}):</span>
+          <strong class="ml-2">{{ counts.done }} / {{ counts.total }}</strong>
+          ({{ progress }} %)
+          —
+          <span class="ml-2 text-green-700">OK={{ counts.ok }}</span>
+          <span class="ml-2 text-red-700">NG={{ counts.ng }}</span>
+          <span class="ml-2 text-orange-700">ERR={{ counts.err }}</span>
+          <span class="ml-2 text-gray-500">skipped={{ counts.skipped }}</span>
+        </div>
+        <button
+          :disabled="running"
+          class="text-xs text-gray-600 hover:text-gray-900 underline disabled:opacity-50"
+          @click="clearHistory"
+        >
+          履歴クリア (累計 {{ jobs.length }} 件)
+        </button>
       </div>
       <div class="w-full bg-gray-200 rounded h-2 overflow-hidden">
         <div class="bg-blue-500 h-2 transition-all" :style="{ width: progress + '%' }"></div>
@@ -302,10 +416,11 @@ if (!from.value || !to.value) setDefaultRange()
     </div>
 
     <div v-if="ngJobs.length > 0" class="bg-white rounded-lg shadow p-4">
-      <div class="font-semibold text-base mb-2 text-red-700">❌ NG ({{ ngJobs.length }})</div>
+      <div class="font-semibold text-base mb-2 text-red-700">❌ NG ({{ ngJobs.length }}、履歴含む)</div>
       <table class="min-w-full text-sm">
         <thead class="bg-red-50 border-b">
           <tr>
+            <th class="px-3 py-2 text-left">run</th>
             <th class="px-3 py-2 text-left">date</th>
             <th class="px-3 py-2 text-left">office</th>
             <th class="px-3 py-2 text-left">cal</th>
@@ -317,6 +432,7 @@ if (!from.value || !to.value) setDefaultRange()
         <tbody>
           <template v-for="j in ngJobs" :key="j.key">
             <tr class="border-b">
+              <td class="px-3 py-2 text-gray-500">#{{ j.runId }}</td>
               <td class="px-3 py-2 font-mono">{{ j.date }}</td>
               <td class="px-3 py-2">{{ j.officeId }}</td>
               <td class="px-3 py-2">{{ j.cal }}</td>
@@ -332,7 +448,7 @@ if (!from.value || !to.value) setDefaultRange()
               </td>
             </tr>
             <tr v-if="expandedKey === j.key && j.response" class="bg-gray-50 border-b">
-              <td colspan="6" class="px-3 py-3">
+              <td colspan="7" class="px-3 py-3">
                 <div class="grid grid-cols-2 gap-4">
                   <div>
                     <div class="text-xs font-semibold text-red-700 mb-1">php_only</div>
@@ -393,10 +509,10 @@ if (!from.value || !to.value) setDefaultRange()
     </div>
 
     <div v-if="errJobs.length > 0" class="bg-white rounded-lg shadow p-4">
-      <div class="font-semibold text-base mb-2 text-orange-700">⚠ ERR ({{ errJobs.length }})</div>
+      <div class="font-semibold text-base mb-2 text-orange-700">⚠ ERR ({{ errJobs.length }}、履歴含む)</div>
       <ul class="text-xs text-orange-700 list-disc pl-5">
         <li v-for="j in errJobs" :key="j.key">
-          {{ j.date }} / office={{ j.officeId }} / cal={{ j.cal }}: {{ j.error }}
+          #{{ j.runId }} {{ j.date }} / office={{ j.officeId }} / cal={{ j.cal }}: {{ j.error }}
         </li>
       </ul>
     </div>
@@ -412,6 +528,42 @@ if (!from.value || !to.value) setDefaultRange()
             : '❌ NG=' + counts.ng + ' / ERR=' + counts.err
         }}
       </div>
+    </div>
+
+    <div v-if="runSummaries.length > 0" class="bg-white rounded-lg shadow p-4">
+      <div class="font-semibold text-sm mb-2 text-gray-700">📜 検証履歴 ({{ runSummaries.length }} run)</div>
+      <table class="min-w-full text-xs">
+        <thead class="bg-gray-50 border-b">
+          <tr>
+            <th class="px-2 py-1 text-left">run</th>
+            <th class="px-2 py-1 text-left">範囲</th>
+            <th class="px-2 py-1 text-right">total</th>
+            <th class="px-2 py-1 text-right">OK</th>
+            <th class="px-2 py-1 text-right">NG</th>
+            <th class="px-2 py-1 text-right">ERR</th>
+            <th class="px-2 py-1 text-right">skipped</th>
+            <th class="px-2 py-1 text-right">running</th>
+            <th class="px-2 py-1 text-left">結果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in runSummaries" :key="r.runId" class="border-b">
+            <td class="px-2 py-1 text-gray-500">#{{ r.runId }}</td>
+            <td class="px-2 py-1 font-mono">{{ r.range }}</td>
+            <td class="px-2 py-1 text-right">{{ r.total }}</td>
+            <td class="px-2 py-1 text-right text-green-700">{{ r.ok }}</td>
+            <td class="px-2 py-1 text-right text-red-700">{{ r.ng }}</td>
+            <td class="px-2 py-1 text-right text-orange-700">{{ r.err }}</td>
+            <td class="px-2 py-1 text-right text-gray-500">{{ r.skipped }}</td>
+            <td class="px-2 py-1 text-right text-blue-700">{{ r.running }}</td>
+            <td class="px-2 py-1">
+              <span v-if="r.running > 0" class="text-blue-700">実行中</span>
+              <span v-else-if="r.ng === 0 && r.err === 0" class="text-green-700">✅ 一致</span>
+              <span v-else class="text-red-700">❌ 差分あり</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </template>
