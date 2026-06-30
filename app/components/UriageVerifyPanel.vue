@@ -89,6 +89,10 @@ interface RecalcJobRow {
   computed_at: string | null
   r2_synced_at: string | null
   last_error: string | null
+  /** verify_jobs に存在する (date, cal) 行数 (LEFT JOIN COALESCE 0、rust-ichibanboshi#49) */
+  verified_count?: number
+  verified_ok?: number
+  verified_ng?: number
 }
 
 interface RecalcJobsResponse {
@@ -615,6 +619,36 @@ function jobStatusLabel(j: RecalcJobRow): { text: string; cls: string } {
   return { text: j.status, cls: 'text-gray-600' }
 }
 
+/** YYYY-MM の日数 (UTC で月末日を取る) */
+function daysInMonth(month: string): number {
+  const m = /^(\d{4})-(\d{2})$/.exec(month)
+  if (!m) return 0
+  return new Date(Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10), 0)).getUTCDate()
+}
+
+/**
+ * verify_jobs 集計 (verified_count / ok / ng) → 表示用ラベル + 色。
+ *
+ * expected_count = 月の日数 × 2 cal (cal=false, cal=true)。
+ * - verified_ng > 0          → ❌ NG あり (要 fix)
+ * - verified_count = 0       → — 未検証 (verify 走らせる必要)
+ * - verified_count >= expect → ✅ 全件検証済
+ * - 0 < count < expect       → ⚠ 部分のみ (途中まで verify)
+ */
+function verifyLabel(j: RecalcJobRow): { text: string; cls: string } {
+  const count = j.verified_count ?? 0
+  const ng = j.verified_ng ?? 0
+  const expected = daysInMonth(j.month) * 2
+  if (ng > 0) return { text: `❌ NG ${ng} 件`, cls: 'text-red-700' }
+  if (count === 0) return { text: '— 未検証', cls: 'text-gray-500' }
+  if (expected > 0 && count >= expected)
+    return { text: `✅ 全件検証済 (${count})`, cls: 'text-green-700' }
+  return {
+    text: `⚠ 部分のみ (${count}${expected > 0 ? `/${expected}` : ''})`,
+    cls: 'text-orange-700',
+  }
+}
+
 /** YYYY-MM → "YYYY-MM-DD" (月末日) */
 function lastDayOf(month: string): string {
   const m = /^(\d{4})-(\d{2})$/.exec(month)
@@ -811,6 +845,7 @@ if (!from.value || !to.value) setDefaultRange()
             <th class="px-2 py-1 text-left">month</th>
             <th class="px-2 py-1 text-left">office</th>
             <th class="px-2 py-1 text-left">状態</th>
+            <th class="px-2 py-1 text-left">検証 (PHP vs Rust)</th>
             <th class="px-2 py-1 text-left">computed_at</th>
             <th class="px-2 py-1 text-left">r2_synced_at</th>
           </tr>
@@ -820,6 +855,7 @@ if (!from.value || !to.value) setDefaultRange()
             <td class="px-2 py-1 font-mono">{{ j.month }}</td>
             <td class="px-2 py-1">{{ j.eigyosho_id }}</td>
             <td class="px-2 py-1" :class="jobStatusLabel(j).cls">{{ jobStatusLabel(j).text }}</td>
+            <td class="px-2 py-1" :class="verifyLabel(j).cls">{{ verifyLabel(j).text }}</td>
             <td class="px-2 py-1 text-gray-500 text-xs">{{ j.computed_at ?? '-' }}</td>
             <td class="px-2 py-1 text-gray-500 text-xs">{{ j.r2_synced_at ?? '-' }}</td>
           </tr>
