@@ -20,8 +20,8 @@ interface SummaryResponse {
   data: PartnerSummary[]
 }
 
-export type Kind = 'with_billing_only' | 'with_non_billing'
-export const KIND_OPTIONS: { value: Kind, label: string }[] = [
+type Kind = 'with_billing_only' | 'with_non_billing'
+const KIND_OPTIONS: { value: Kind, label: string }[] = [
   { value: 'with_non_billing', label: '請求＋非請求 (請求K IN (0,2)、default)' },
   { value: 'with_billing_only', label: '請求＋請求のみ (請求K IN (0,1))' },
 ]
