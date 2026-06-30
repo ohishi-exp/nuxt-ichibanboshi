@@ -832,7 +832,16 @@ if (!from.value || !to.value) setDefaultRange()
     </div>
 
     <div v-if="summaryMsg || summaryJobs.length > 0" class="bg-white rounded-lg shadow p-4">
-      <div class="text-sm font-semibold mb-2">📊 recalc / R2 同期 状態サマリ</div>
+      <div class="text-sm font-semibold mb-2 flex items-center justify-between gap-2 flex-wrap">
+        <span>📊 recalc / R2 同期 状態サマリ</span>
+        <NuxtLink
+          to="/admin/recalc"
+          class="text-xs text-blue-600 hover:underline font-normal"
+          title="recalc / R2 同期を実行 (= 状態サマリの状態を更新)"
+        >
+          /admin/recalc を開く →
+        </NuxtLink>
+      </div>
       <div class="text-xs text-gray-600 mb-2">{{ summaryMsg }}</div>
       <div v-if="summaryJobs.length === 0 && !summaryLoading && summaryMsg" class="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-3 py-2">
         対象期間に recalc_jobs が 1 件もありません → recalc が未実行です。
