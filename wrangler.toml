@@ -37,9 +37,11 @@ secret_name = "CF_ACCESS_CLIENT_SECRET"
 binding = "URIAGE_R2"
 bucket_name = "ichibanboshi-uriage"
 
-# rust-ichiban の `/api/uriage/r2/pending` を 15 分おきに polling し、fingerprint
-# 変化があった raw NDJSON.gz を R2 (URIAGE_R2) に upload + ack する scheduled task。
+# rust-ichiban の `/api/uriage/r2/pending` を polling し、fingerprint 変化があった
+# raw NDJSON.gz を R2 (URIAGE_R2) に upload + ack する scheduled task。
 # nuxt.config の nitro.scheduledTasks と同式 (両方必須)。
-# `*/15 * * * *` = 毎時 00/15/30/45 分。
+# `0 10 * * 1-6` = 月〜土 10:00 UTC = 月〜土 19:00 JST (1 日 1 回、業務時間外の
+# safety net)。再計算直後は admin page の「再計算」ボタンが recalc → R2 sync を
+# 自動 chain するため通常は cron を待つ必要なし。
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["0 10 * * 1-6"]
