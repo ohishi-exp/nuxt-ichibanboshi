@@ -49,6 +49,17 @@ const filteredOptions = computed(() => {
   return itemOptions.value.filter(o => o.item_code.includes(q) || o.item_name.includes(q))
 })
 
+// チェックを入れたのに毎回手入力させないよう、表示名が未入力なら最初に選んだ
+// 品名コードの品目名をデフォルトで入れる (#57 follow-up)。全解除したらクリアする。
+watch(selectedCodes, (codes) => {
+  if (codes.length === 0) {
+    newLabel.value = ''
+  } else if (!newLabel.value.trim()) {
+    const first = itemOptions.value.find(o => o.item_code === codes[0])
+    newLabel.value = first?.item_name || first?.item_code || ''
+  }
+})
+
 async function loadGroups() {
   const res = await $fetch<AliasGroupsResponse>('/api/unchin/alias/items')
   groups.value = res.groups
@@ -92,8 +103,12 @@ async function createGroup() {
   saving.value = true
   saveMsg.value = ''
   try {
-    if (!newLabel.value.trim() || selectedCodes.value.length < 2) {
-      saveMsg.value = '表示名と品名コード (2件以上) を選択してください'
+    if (!newLabel.value.trim()) {
+      saveMsg.value = '⚠ 表示名を入力してください'
+      return
+    }
+    if (selectedCodes.value.length < 2) {
+      saveMsg.value = '⚠ 品名コードを2件以上選択してください'
       return
     }
     await $fetch('/api/unchin/alias/items', {
@@ -190,7 +205,7 @@ async function deleteGroup(groupId: string) {
           </div>
           <p class="text-xs text-gray-500 mb-2">選択中: {{ selectedCodes.length }} 件</p>
           <button
-            :disabled="saving"
+            :disabled="saving || !newLabel.trim() || selectedCodes.length < 2"
             class="bg-orange-600 text-white px-4 py-1 rounded text-sm hover:bg-orange-700 disabled:bg-gray-400"
             @click="createGroup"
           >

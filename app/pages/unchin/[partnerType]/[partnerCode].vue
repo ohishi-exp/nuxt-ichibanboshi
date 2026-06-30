@@ -102,6 +102,15 @@ function toggleGroupSelection(index: number) {
   if (next.has(index)) next.delete(index)
   else next.add(index)
   selectedForGroup.value = next
+  if (next.size === 0) {
+    // 選択を全解除したら次回用にクリア
+    groupLabel.value = ''
+  } else if (!groupLabel.value.trim()) {
+    // 表示名が未入力なら、最初に選んだ行の品目名をデフォルトで入れる
+    // (せっかく行を選んでいるのに毎回手入力させない、#57 follow-up)
+    const firstIndex = Math.min(...next)
+    groupLabel.value = items.value[firstIndex]?.item_name || items.value[firstIndex]?.item_code || ''
+  }
 }
 
 const selectedDistinctItemCodes = computed(() => {
@@ -116,8 +125,12 @@ async function createGroupFromSelection() {
   groupMsg.value = ''
   try {
     const itemCodes = Array.from(selectedDistinctItemCodes.value)
-    if (!groupLabel.value.trim() || itemCodes.length < 2) {
-      groupMsg.value = '表示名と、異なる品名コードを2件以上選択してください（同じ品名コードの行を複数選んでも1件として扱われます）'
+    if (!groupLabel.value.trim()) {
+      groupMsg.value = '⚠ 表示名を入力してください'
+      return
+    }
+    if (itemCodes.length < 2) {
+      groupMsg.value = '⚠ 異なる品名コードを2件以上選択してください（同じ品名コードの行を複数選んでも1件として扱われます）'
       return
     }
     await $fetch('/api/unchin/alias/items', {
@@ -478,7 +491,7 @@ function periodTitle(minDate: string | undefined, maxDate: string | undefined): 
               選択中: {{ selectedForGroup.size }} 行 (異なる品名コード {{ selectedDistinctItemCodes.size }} 種)
             </span>
             <button
-              :disabled="grouping"
+              :disabled="grouping || !groupLabel.trim() || selectedDistinctItemCodes.size < 2"
               class="bg-orange-600 text-white px-4 py-1 rounded text-sm hover:bg-orange-700 disabled:bg-gray-400"
               @click="createGroupFromSelection"
             >
@@ -486,7 +499,7 @@ function periodTitle(minDate: string | undefined, maxDate: string | undefined): 
             </button>
             <button
               class="text-xs text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100"
-              @click="selectedForGroup = new Set()"
+              @click="selectedForGroup = new Set(); groupLabel = ''"
             >
               選択解除
             </button>
