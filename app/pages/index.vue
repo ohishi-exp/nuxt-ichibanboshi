@@ -288,17 +288,17 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
           </div>
         </div>
 
-        <!-- 担当者 売上構成順位 (期間合計 table) + 売上構成推移 (% trend chart)。
-             横横除外 toggle と連動。user 2026-06-30 要望。 -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <UriagePersonShareRanking
-            :rows="personMonthlyRows"
-            :exclude-yokoyoko="excludeYokoyoko"
-            :period-label="periodLabel"
-          />
-          <div class="print-section print-chart">
-            <UriagePersonShareTrendChart :rows="personMonthlyRows" :exclude-yokoyoko="excludeYokoyoko" />
-          </div>
+        <!-- 担当者 売上構成順位 (期間合計 table)。full width で見やすく
+             (user 2026-06-30: 「表は 2 列にしないで」)。 -->
+        <UriagePersonShareRanking
+          :rows="personMonthlyRows"
+          :exclude-yokoyoko="excludeYokoyoko"
+          :period-label="periodLabel"
+        />
+
+        <!-- 担当者 売上構成推移 (% trend chart)。横横除外 toggle と連動。 -->
+        <div class="print-section print-chart">
+          <UriagePersonShareTrendChart :rows="personMonthlyRows" :exclude-yokoyoko="excludeYokoyoko" />
         </div>
 
         <div>
