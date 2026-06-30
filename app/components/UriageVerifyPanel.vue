@@ -513,8 +513,31 @@ async function runR2SyncVerifyFirst() {
     const ngPresent = pendingRes.items.filter((i) => i.blocker === 'ng_present')
     const readyCount = pendingRes.items.filter((i) => i.ready).length
     if (pendingRes.count === 0) {
-      r2SyncMsg.value =
-        '[完了] R2 同期対象なし (recalc 未実行 or 既に同期済み)。先に下のサマリで状態を確認、未実行なら /admin/recalc の「再計算 → R2 同期」を実行してください。'
+      // 期間内の recalc_jobs を fetch してどんな状態か診断 (user 2026-06-30:
+      // 「1 月まで同期されてないのに対象なしはおかしい」)。pending=0 でも recalc_jobs に
+      // failed / raw_path=NULL の行があると user は「未同期」と認識する。
+      let diagnosis = ''
+      try {
+        const params = new URLSearchParams({ from: fromMonth, to: toMonth })
+        const jobs = await $fetch<RecalcJobsResponse>(
+          `/api/uriage/recalc-jobs?${params.toString()}`,
+        )
+        const synced = jobs.jobs.filter((j) => j.status === 'r2_synced').length
+        const computed = jobs.jobs.filter((j) => j.status === 'computed').length
+        const failed = jobs.jobs.filter((j) => j.status === 'failed').length
+        const total = jobs.jobs.length
+        if (total === 0) {
+          diagnosis = `期間 ${fromMonth}〜${toMonth} に recalc_jobs が 1 件もありません → /admin/recalc で再計算してください。`
+        } else {
+          diagnosis = `期間 ${fromMonth}〜${toMonth}: recalc_jobs ${total} 件 (✅同期済=${synced} / 🟡同期待ち=${computed} / ❌失敗=${failed})。`
+          if (computed > 0) {
+            diagnosis += `\n⚠ 🟡 が ${computed} 件あるのに pending=0 です。raw_path が NULL (= recalc が 0 行だったため raw 出力なし) の可能性 → /admin/recalc で再計算してください。`
+          }
+        }
+      } catch {
+        diagnosis = '(recalc-jobs の診断 fetch 失敗、サマリ参照してください)'
+      }
+      r2SyncMsg.value = `✅ R2 同期対象なし (r2_pending view が空)\n${diagnosis}`
       r2SyncPhase.value = 'done'
       // 状態サマリも自動 reload (どのバケットが既同期かが見える)
       void loadStatusSummary()
@@ -1032,6 +1055,55 @@ async function runR2SyncForRow(j: RecalcJobRow) {
  * 状態サマリ panel に常駐させているので、from/to を手で動かさなくても 1 クリックで
  * 「2026 年に入って以降の全 pending」を verify-first で R2 同期できる。
  */
+/**
+ * 「⚡ 2026-01〜今日 一括 recalc + R2 同期」ボタン (user 2026-06-30:
+ * 「編集可能月だけ同期すんなよ? 全部読めるんだから同期すんだよ?」)
+ *
+ * 標準の `/api/uriage/recalc` (no month) は CakePHP の editable_months
+ * (= 通常 2 ヶ月分) しか recalc しない。1 月から全期間を recalc + sync
+ * したい場合、月単位で `/api/uriage/recalc?month=YYYY-MM` を sequential
+ * に叩く必要がある。
+ *
+ * 完了後に R2 同期 (verify-first) を実行して全 pending を流す。
+ */
+async function runRecalcAndSyncFromYear2026() {
+  if (running.value || r2SyncLoading.value) return
+  r2SyncLoading.value = true
+  r2SyncMsg.value = '⚡ 2026-01〜今日 一括 recalc を開始…'
+  r2SyncResult.value = null
+  r2SyncPhase.value = 'fetch-pending'
+  const today = new Date()
+  const ty = today.getUTCFullYear()
+  const tm = today.getUTCMonth() + 1
+  // 2026-01 から今日の月までを列挙 (2026 年内に限定、user 「2026-01 から」)
+  const months: string[] = []
+  for (let m = 1; m <= tm; m++) {
+    months.push(`2026-${String(m).padStart(2, '0')}`)
+  }
+  try {
+    for (let i = 0; i < months.length; i++) {
+      const m = months[i]
+      r2SyncMsg.value = `⚡ [${i + 1}/${months.length}] recalc ${m} 実行中…`
+      try {
+        await $fetch(`/api/uriage/recalc?month=${m}`, { method: 'POST' })
+      } catch (e: unknown) {
+        const err = e as { statusCode?: number; statusMessage?: string }
+        r2SyncMsg.value += `\n  ❌ ${m} recalc 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+        // 続行 (= 1 月失敗でも他月は試す)
+      }
+    }
+    r2SyncMsg.value += `\n✅ 一括 recalc 完了 (${months.length} ヶ月)。続けて R2 同期 (verify-first)…`
+    // R2 同期は existing runR2SyncFromYear2026 を呼ぶ
+    r2SyncLoading.value = false // 一旦 false に戻して runR2SyncFromYear2026 を入れる
+    await runR2SyncFromYear2026()
+  } catch (e: unknown) {
+    const err = e as { statusCode?: number; statusMessage?: string }
+    r2SyncMsg.value += `\n❌ 一括 recalc 中断: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+    r2SyncPhase.value = 'idle'
+    r2SyncLoading.value = false
+  }
+}
+
 async function runR2SyncFromYear2026() {
   if (running.value || r2SyncLoading.value) return
   const today = new Date()
@@ -1192,11 +1264,19 @@ async function runR2SyncFromYear2026() {
         <div class="flex items-center gap-3">
           <button
             :disabled="running || r2SyncLoading"
+            class="text-xs text-red-700 border border-red-300 hover:bg-red-50 px-2 py-1 rounded font-normal disabled:opacity-50"
+            title="2026-01 から今日まで各月を順次 recalc (= CakePHP editable_months の制限を超えて全期間 recalc) → 完了後に R2 同期 (verify-first)"
+            @click="runRecalcAndSyncFromYear2026"
+          >
+            {{ r2SyncLoading ? '実行中…' : '⚡ 2026-01〜今日 全期間 recalc + R2 同期' }}
+          </button>
+          <button
+            :disabled="running || r2SyncLoading"
             class="text-xs text-purple-700 border border-purple-300 hover:bg-purple-50 px-2 py-1 rounded font-normal disabled:opacity-50"
-            title="from を 2026-01-01 / to を今日に切り替えて、R2 同期 (verify-first) を実行"
+            title="from を 2026-01-01 / to を今日に切り替えて、R2 同期 (verify-first) を実行 (recalc はしない)"
             @click="runR2SyncFromYear2026"
           >
-            {{ r2SyncLoading ? '実行中…' : '🚀 2026-01〜今日 R2 一括同期' }}
+            {{ r2SyncLoading ? '実行中…' : '🚀 2026-01〜今日 R2 一括同期 (recalc なし)' }}
           </button>
           <button
             :disabled="running || r2SyncLoading"
@@ -1224,6 +1304,30 @@ async function runR2SyncFromYear2026() {
         </div>
       </div>
       <div class="text-xs text-gray-600 mb-2">{{ summaryMsg }}</div>
+
+      <!-- r2SyncMsg をここでもミラー表示 (user 2026-06-30 「2026-01〜今日 R2 一括同期
+           が機能してない」: 実際は機能しているが上の方の panel で message が出るので
+           summary 内でボタン押した時に見えない問題への対処)。inline progress も同居。 -->
+      <div
+        v-if="r2SyncMsg && r2SyncLoading"
+        class="text-sm whitespace-pre-wrap text-purple-800 bg-purple-50 border border-purple-200 rounded px-3 py-2 mb-2 space-y-2"
+      >
+        <div>🚀 {{ r2SyncMsg }}</div>
+        <div v-if="counts.total > 0" class="text-xs text-purple-900">
+          <div class="mb-1">
+            進捗: <strong>{{ counts.done }} / {{ counts.total }}</strong>
+            ({{ progress }} %) —
+            <span class="text-green-700">OK={{ counts.ok }}</span>
+            <span class="ml-1 text-red-700">NG={{ counts.ng }}</span>
+            <span class="ml-1 text-orange-700">ERR={{ counts.err }}</span>
+            <span class="ml-1 text-gray-600">skipped={{ counts.skipped }}</span>
+          </div>
+          <div class="w-full bg-purple-200 rounded h-1.5 overflow-hidden">
+            <div class="bg-purple-600 h-1.5 transition-all" :style="{ width: progress + '%' }"></div>
+          </div>
+        </div>
+      </div>
+
       <div v-if="summaryJobs.length === 0 && !summaryLoading && summaryMsg" class="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-3 py-2">
         対象期間に recalc_jobs が 1 件もありません → recalc が未実行です。
         <NuxtLink to="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</NuxtLink>
