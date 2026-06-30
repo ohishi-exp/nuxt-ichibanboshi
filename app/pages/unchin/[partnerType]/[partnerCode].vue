@@ -82,8 +82,14 @@ const registerMsg = ref('')
  * 移動して品名コードを再検索する手間を省く — このページは既に品名コードと品目名を
  * 一覧表示しているため、行を選んでそのまま登録できた方が早い (#57 follow-up)。
  * 既に alias でまとまっている行 (`item_code` が `alias:` prefix) は選択不可。
+ *
+ * 選択状態は**行インデックス**で持つ (品名コードでは持たない)。このページの行は
+ * 品名コード+運賃の組で分かれているため、同じ品名コードの行が複数存在する
+ * (例: 「工場間輸送」が運賃違いで複数行)。品名コードをキーにすると、1行を
+ * チェックしただけで同じ品名コードの他の行まで一括チェック扱いになってしまう
+ * バグがあったため、行単位で選択し、登録時に品名コードへ変換する。
  */
-const selectedForGroup = ref<Set<string>>(new Set())
+const selectedForGroup = ref<Set<number>>(new Set())
 const groupLabel = ref('')
 /** 'merge' = 同一としてまとめる / 'exception' = 別物として記録 (#57 follow-up)。 */
 const groupKind = ref<'merge' | 'exception'>('merge')
@@ -91,20 +97,27 @@ const groupNote = ref('')
 const grouping = ref(false)
 const groupMsg = ref('')
 
-function toggleGroupSelection(itemCode: string) {
+function toggleGroupSelection(index: number) {
   const next = new Set(selectedForGroup.value)
-  if (next.has(itemCode)) next.delete(itemCode)
-  else next.add(itemCode)
+  if (next.has(index)) next.delete(index)
+  else next.add(index)
   selectedForGroup.value = next
 }
+
+const selectedDistinctItemCodes = computed(() => {
+  const codes = Array.from(selectedForGroup.value)
+    .map(i => items.value[i]?.item_code)
+    .filter((c): c is string => !!c)
+  return new Set(codes)
+})
 
 async function createGroupFromSelection() {
   grouping.value = true
   groupMsg.value = ''
   try {
-    const itemCodes = Array.from(selectedForGroup.value)
+    const itemCodes = Array.from(selectedDistinctItemCodes.value)
     if (!groupLabel.value.trim() || itemCodes.length < 2) {
-      groupMsg.value = '表示名と2件以上の品名コードを選択してください'
+      groupMsg.value = '表示名と、異なる品名コードを2件以上選択してください（同じ品名コードの行を複数選んでも1件として扱われます）'
       return
     }
     await $fetch('/api/unchin/alias/items', {
@@ -325,8 +338,8 @@ function printList() {
                   <input
                     v-if="!it.item_code.startsWith('alias:')"
                     type="checkbox"
-                    :checked="selectedForGroup.has(it.item_code)"
-                    @change="toggleGroupSelection(it.item_code)"
+                    :checked="selectedForGroup.has(i)"
+                    @change="toggleGroupSelection(i)"
                   >
                 </td>
                 <td class="py-1">{{ it.item_name || it.item_code || '(品目未設定)' }}</td>
@@ -375,7 +388,9 @@ function printList() {
               <label class="block text-xs text-gray-500">備考（任意）</label>
               <input v-model="groupNote" type="text" class="border rounded px-2 py-1 text-sm" placeholder="例: 積地が違うため別物">
             </div>
-            <span class="text-xs text-gray-500">選択中: {{ selectedForGroup.size }} 件の品名コード</span>
+            <span class="text-xs text-gray-500">
+              選択中: {{ selectedForGroup.size }} 行 (異なる品名コード {{ selectedDistinctItemCodes.size }} 種)
+            </span>
             <button
               :disabled="grouping"
               class="bg-orange-600 text-white px-4 py-1 rounded text-sm hover:bg-orange-700 disabled:bg-gray-400"
