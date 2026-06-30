@@ -35,7 +35,10 @@ function pickKingaku(r: MonthlyTotal): number {
   return excludeYokoyoko.value ? (r.kingaku_y0 ?? 0) : r.kingaku
 }
 
-const TOP_N = 15
+// 30 名に拡張 (user 2026-06-30 「30 位にしたら? とりあえず 20 人くらいしかいないが」)。
+// 実担当者数 (~20 名) を上回るので「その他」は 0 になり stack は自然に 100% へ。
+// 担当者が増えた場合も 16~30 位を取りこぼさない。
+const TOP_N = 30
 
 const colors = [
   '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
@@ -97,6 +100,34 @@ const chartData = computed<ChartData>(() => {
       sharePct: grandTotal > 0 ? (total / grandTotal) * 100 : 0,
     }
   })
+
+  // 16 位以下 (TOP N から漏れた人) を「その他」 series にまとめて、
+  // 各月の stack が 100% になるようにする
+  // (user 2026-06-30 「足しても 100% にならないのなぜ?」=
+  //  TOP 15 だけだと 16+ 位の分が欠けるため、月ごとに 95~98% で止まっていた)。
+  const topSet = new Set(topPersons)
+  let otherTotal = 0
+  const otherValues = months.map((m) => {
+    const monthMap = byMonth.get(m)
+    if (!monthMap) return 0
+    let otherSum = 0
+    for (const [name, v] of monthMap) {
+      if (!topSet.has(name)) otherSum += v
+    }
+    const sum = monthSums.get(m) ?? 0
+    return sum > 0 ? (otherSum / sum) * 100 : 0
+  })
+  for (const [name, v] of totals) {
+    if (!topSet.has(name)) otherTotal += v
+  }
+  if (otherTotal > 0) {
+    series.push({
+      name: 'その他',
+      values: otherValues,
+      total: otherTotal,
+      sharePct: grandTotal > 0 ? (otherTotal / grandTotal) * 100 : 0,
+    })
+  }
 
   return { months, series }
 })
@@ -167,19 +198,23 @@ const option = computed(() => {
     // 見える、user 2026-06-30 「順番が逆 タイトル？人名の順番合わせて」)。
     // legend と stack の見た目を一致させるため、series を reverse して「大きい順に上」に積む。
     // 各 series の色は legend 順 (= 元 i) に紐付けたまま reverse する。
+    // 「その他」series (16+ 位の合算、100% に届かせるためのフィラー) は色を gray 固定。
     series: d.series
-      .map((s, i) => ({
-        name: s.name,
-        type: 'line' as const,
-        stack: 'share',
-        areaStyle: { opacity: 0.7 },
-        lineStyle: { width: 1, color: colors[i % colors.length] },
-        itemStyle: { color: colors[i % colors.length] },
-        data: s.values,
-        symbol: 'circle' as const,
-        symbolSize: 4,
-        emphasis: { focus: 'series' as const },
-      }))
+      .map((s, i) => {
+        const color = s.name === 'その他' ? '#9ca3af' : colors[i % colors.length]
+        return {
+          name: s.name,
+          type: 'line' as const,
+          stack: 'share',
+          areaStyle: { opacity: 0.7 },
+          lineStyle: { width: 1, color },
+          itemStyle: { color },
+          data: s.values,
+          symbol: 'circle' as const,
+          symbolSize: 4,
+          emphasis: { focus: 'series' as const },
+        }
+      })
       .reverse(),
   }
 })

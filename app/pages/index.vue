@@ -33,8 +33,24 @@ const customerYoyDept = ref('')
 const departments = ref<DepartmentOption[]>([])
 
 const currentYear = new Date().getFullYear()
-const from = ref(`${currentYear - 1}-04`)
-const to = ref(`${currentYear}-03`)
+// 期間は localStorage 永続化 (user 2026-06-30 「期間を localstorage 保存にして」)。
+// SSR 時は default 値を返し、client mount 後に localStorage から復元 + watch で書き戻し。
+// YYYY-MM 形式の妥当性チェック付き (壊れた値は default fallback)。
+const PERIOD_FROM_KEY = 'ichibanboshi:period:from'
+const PERIOD_TO_KEY = 'ichibanboshi:period:to'
+const defaultFrom = `${currentYear - 1}-04`
+const defaultTo = `${currentYear}-03`
+function loadPeriod(key: string, fallback: string): string {
+  if (!import.meta.client) return fallback
+  const saved = window.localStorage.getItem(key)
+  return saved && /^\d{4}-\d{2}$/.test(saved) ? saved : fallback
+}
+const from = ref(loadPeriod(PERIOD_FROM_KEY, defaultFrom))
+const to = ref(loadPeriod(PERIOD_TO_KEY, defaultTo))
+if (import.meta.client) {
+  watch(from, (v) => window.localStorage.setItem(PERIOD_FROM_KEY, v))
+  watch(to, (v) => window.localStorage.setItem(PERIOD_TO_KEY, v))
+}
 // 月別売上チャートのフィルタ: '' = 全社 / 'exclude:宮崎' = 宮崎除く / 'include:<code>' = 特定営業所
 const monthlyFilter = ref('')
 

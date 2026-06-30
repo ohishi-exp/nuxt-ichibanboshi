@@ -39,7 +39,8 @@ function pickKingaku(r: MonthlyTotal): number {
   return excludeYokoyoko.value ? (r.kingaku_y0 ?? 0) : r.kingaku
 }
 
-const TOP_N = 15
+// 30 名に拡張 (user 2026-06-30 「30 位にしたら? とりあえず 20 人くらいしかいないが」)。
+const TOP_N = 30
 
 const colors = [
   '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
