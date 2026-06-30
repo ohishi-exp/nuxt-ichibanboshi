@@ -256,6 +256,22 @@ function fmtYen(n: number): string {
 function printList() {
   window.print()
 }
+
+/**
+ * 期間列の表示改善: 既定は年月までに短縮し、ホバー (title 属性) でフルの日付範囲を
+ * 出す。行が多いと YYYY-MM-DD の縦並びが冗長で見づらいため (#57 follow-up)。
+ */
+function toMonth(ymd: string | undefined): string {
+  return ymd ? ymd.slice(0, 7) : '?'
+}
+function periodLabel(minDate: string | undefined, maxDate: string | undefined): string {
+  const minM = toMonth(minDate)
+  const maxM = toMonth(maxDate)
+  return minM === maxM ? minM : `${minM} 〜 ${maxM}`
+}
+function periodTitle(minDate: string | undefined, maxDate: string | undefined): string {
+  return minDate === maxDate ? (minDate ?? '') : `${minDate ?? '?'} 〜 ${maxDate ?? '?'}`
+}
 </script>
 
 <template>
@@ -346,9 +362,12 @@ function printList() {
                 <td class="py-1 text-xs text-gray-400 no-print">{{ it.item_code || '?' }}</td>
                 <td class="py-1 text-right font-semibold">{{ fmtYen(it.fare) }}</td>
                 <td class="py-1 text-right no-print">{{ it.count ?? '?' }}</td>
-                <td class="py-1 text-xs text-gray-400 no-print">
+                <td
+                  class="py-1 text-xs text-gray-400 no-print cursor-help"
+                  :title="periodTitle(it.min_date, it.max_date)"
+                >
                   <template v-if="it.min_date || it.max_date">
-                    {{ it.min_date }} 〜 {{ it.max_date }}
+                    {{ periodLabel(it.min_date, it.max_date) }}
                   </template>
                 </td>
                 <td class="py-1">
