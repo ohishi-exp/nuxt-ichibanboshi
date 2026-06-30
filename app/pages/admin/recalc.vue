@@ -58,6 +58,22 @@ interface DailyResponse {
 
 type Phase = 'idle' | 'recalc' | 'sync' | 'done' | 'error'
 
+/**
+ * ofetch が投げる error の data を文字列化する。
+ * rust 側は plain text を body に返すが、Nitro proxy / ofetch を通る過程で
+ * `{ statusMessage, data: {...} }` の object 形に wrap されることがあり、
+ * `${err.data}` で `[object Object]` になっていた (Refs ohishi-exp/rust-ichibanboshi#39)。
+ */
+function fmtErrData(d: unknown): string {
+  if (d == null) return ''
+  if (typeof d === 'string') return d
+  try {
+    return JSON.stringify(d)
+  } catch {
+    return String(d)
+  }
+}
+
 const month = ref('')
 const eigyoshoId = ref('')
 
@@ -133,8 +149,8 @@ async function runRecalcAndSync() {
     // (失敗しても recalc 全体は成功扱い、グラフは部分集計でも表示)
     void loadRanking()
   } catch (e: unknown) {
-    const err = e as { statusCode?: number; statusMessage?: string; data?: string }
-    error.value = `エラー (${phase.value}): ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${err.data ?? ''}`
+    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
+    error.value = `エラー (${phase.value}): ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${fmtErrData(err.data)}`
     phase.value = 'error'
   }
 }
@@ -181,8 +197,8 @@ async function runR2SyncOnly() {
     const res = await $fetch<SyncResult>('/api/uriage/r2-sync', { method: 'POST' })
     syncResult.value = res
   } catch (e: unknown) {
-    const err = e as { statusCode?: number; statusMessage?: string; data?: string }
-    syncOnlyError.value = `エラー: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${err.data ?? ''}`
+    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
+    syncOnlyError.value = `エラー: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${fmtErrData(err.data)}`
   } finally {
     syncOnlyLoading.value = false
   }
@@ -212,8 +228,8 @@ async function toggleDaily(j: RecalcJob, cal: boolean) {
     const res = await $fetch<DailyResponse>(`/api/uriage/daily?${params.toString()}`)
     dailyData.value[key] = res.rows
   } catch (e: unknown) {
-    const err = e as { statusCode?: number; statusMessage?: string }
-    dailyError.value[key] = `${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
+    dailyError.value[key] = `${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${fmtErrData(err.data)}`
   } finally {
     dailyLoading.value[key] = false
   }
@@ -243,8 +259,8 @@ async function deleteBucket(j: RecalcJob) {
     delete dailyOpen.value[bucketKey(j.month, j.eigyosho_id, true)]
     delete dailyOpen.value[bucketKey(j.month, j.eigyosho_id, false)]
   } catch (e: unknown) {
-    const err = e as { statusCode?: number; statusMessage?: string }
-    window.alert(`削除に失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`)
+    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
+    window.alert(`削除に失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${fmtErrData(err.data)}`)
   } finally {
     deleting.value[key] = false
   }
@@ -266,8 +282,8 @@ async function rebuildAll() {
     dailyData.value = {}
     rankingData.value = {}
   } catch (e: unknown) {
-    const err = e as { statusCode?: number; statusMessage?: string }
-    rebuildMsg.value = `❌ エラー: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
+    rebuildMsg.value = `❌ エラー: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${fmtErrData(err.data)}`
   } finally {
     rebuildLoading.value = false
   }
