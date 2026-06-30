@@ -99,8 +99,39 @@ onMounted(async () => {
   } catch {
     departments.value = []
   }
-  await Promise.all([loadData(), loadTopRanking()])
+  await Promise.all([loadData(), loadTopRanking(), loadPersonMonthlyTotals()])
 })
+
+// ── 担当者順位推移 chart (rust uriage_person_daily 由来、Refs #762) ──
+interface PersonMonthlyTotalRow {
+  month: string
+  person_name: string
+  eigyosho_id: number
+  cal: boolean
+  kingaku: number
+  yosha_kingaku: number
+  kensuu: number
+  calculated_at: string
+}
+interface PersonMonthlyTotalsResponse {
+  from: string
+  to: string
+  cal: boolean
+  rows: PersonMonthlyTotalRow[]
+}
+const personMonthlyRows = ref<PersonMonthlyTotalRow[]>([])
+
+async function loadPersonMonthlyTotals() {
+  try {
+    const res = await $fetch<PersonMonthlyTotalsResponse>(
+      `/api/uriage/person-monthly-totals?from=${from.value}&to=${to.value}&cal=true`,
+    )
+    personMonthlyRows.value = res.rows
+  } catch {
+    // recalc 未実行 / endpoint 未到達でも他チャートは表示する
+    personMonthlyRows.value = []
+  }
+}
 
 async function reloadCustomerYoy() {
   try {
@@ -154,6 +185,8 @@ async function loadData() {
     trendSource.value = trend.source_table
     customerYoyData.value = custYoy.data
     customerYoySource.value = custYoy.source_table
+    // 担当者順位推移 chart も期間と連動 (失敗しても他は影響させない)
+    void loadPersonMonthlyTotals()
   } catch (e: any) {
     error.value = e.message || '読み込みに失敗しました'
   } finally {
@@ -317,6 +350,10 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
 
         <div class="print-section print-chart">
           <CustomerBumpChart :data="customerTrend" :source-table="trendSource" />
+        </div>
+
+        <div class="print-section print-chart">
+          <UriagePersonBumpChart :rows="personMonthlyRows" />
         </div>
 
         <div class="print-section print-chart">
