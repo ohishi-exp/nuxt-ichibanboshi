@@ -275,7 +275,7 @@ function printList() {
       </div>
     </header>
 
-    <main class="max-w-5xl mx-auto px-4 py-6">
+    <main class="max-w-5xl mx-auto px-4 py-6" :class="{ 'pb-24': selectedForGroup.size > 0 }">
       <div v-if="loading" class="text-center py-20 text-gray-500">読み込み中...</div>
       <div v-else-if="error" class="text-center py-20 text-red-600">{{ error }}</div>
       <template v-else>
@@ -369,7 +369,15 @@ function printList() {
             </tbody>
           </table>
 
-          <div v-if="selectedForGroup.size > 0" class="mt-3 pt-3 border-t flex items-end gap-3 flex-wrap no-print">
+          <div v-if="groupMsg" class="mt-2 text-sm whitespace-pre-wrap no-print">{{ groupMsg }}</div>
+        </div>
+
+        <!-- 選択中は画面下部に固定表示 (スクロールしても操作できるように、#57 follow-up) -->
+        <div
+          v-if="selectedForGroup.size > 0"
+          class="fixed inset-x-0 bottom-0 z-40 bg-white border-t shadow-[0_-2px_8px_rgba(0,0,0,0.1)] no-print"
+        >
+          <div class="max-w-5xl mx-auto px-4 py-3 flex items-end gap-3 flex-wrap">
             <div class="flex gap-3 text-sm">
               <label class="flex items-center gap-1 cursor-pointer">
                 <input v-model="groupKind" type="radio" value="merge">
@@ -402,7 +410,6 @@ function printList() {
               選択解除
             </button>
           </div>
-          <div v-if="groupMsg" class="mt-2 text-sm whitespace-pre-wrap no-print">{{ groupMsg }}</div>
         </div>
 
         <div class="bg-white rounded-lg shadow p-4 no-print">
