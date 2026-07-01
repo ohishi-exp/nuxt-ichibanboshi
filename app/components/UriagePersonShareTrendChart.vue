@@ -57,6 +57,10 @@ function pickYosha(r: MonthlyTotal): number {
   return excludeYokoyoko.value ? (r.yosha_kingaku_y0 ?? 0) : r.yosha_kingaku
 }
 
+/** ツールチップの差額表示トグル (default off、user 2026-07-01
+ * 「差額表示はトグルにして」)。 */
+const showDiff = ref(false)
+
 // 30 名に拡張 (user 2026-06-30 「30 位にしたら? とりあえず 20 人くらいしかいないが」)。
 // 実担当者数 (~20 名) を上回るので「その他」は 0 になり stack は自然に 100% へ。
 // 担当者が増えた場合も 16~30 位を取りこぼさない。
@@ -213,7 +217,7 @@ const option = computed(() => {
         const lines = sorted.map((p) => {
           const s = d.series.find((ss) => ss.name === p.seriesName)
           const diff = s?.diffs[p.dataIndex]
-          const diffPart = diff == null ? '' : ` (差額 ${fmtMan(diff)}円)`
+          const diffPart = showDiff.value && diff != null ? ` (差額 ${fmtMan(diff)}円)` : ''
           return `<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:4px"></span>${p.seriesName}: <strong>${p.value.toFixed(1)}%</strong>${diffPart}`
         })
         return `<strong>${month}</strong><br/>${lines.join('<br/>')}`
@@ -281,7 +285,11 @@ const option = computed(() => {
 <template>
   <div class="bg-white rounded-lg shadow p-4">
     <!-- component 内 toggle (親と v-model:exclude-yokoyoko で同期) -->
-    <div class="flex items-center justify-end mb-1 no-print">
+    <div class="flex items-center justify-end gap-3 mb-1 no-print">
+      <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
+        <input v-model="showDiff" type="checkbox" class="rounded" />
+        差額表示 (売上-支払)
+      </label>
       <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
         <input v-model="excludeYokoyoko" type="checkbox" class="rounded" />
         横横除外
