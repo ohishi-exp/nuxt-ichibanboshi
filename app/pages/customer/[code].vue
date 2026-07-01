@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import VChart from 'vue-echarts'
 import type { CustomerDetailResponse } from '~/types'
-import { AuthToolbar } from '~/composables/useAuth'
 
 const route = useRoute()
 const code = route.params.code as string
@@ -149,20 +148,7 @@ const yoyOption = computed(() => {
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <button class="text-sm text-blue-600 hover:underline" @click="navigateTo('/')">
-            &larr; ダッシュボード
-          </button>
-          <h1 class="text-xl font-bold">
-            {{ detail?.customer_name || code }}
-          </h1>
-          <span class="text-sm text-gray-400">{{ code }}</span>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
-      </div>
-    </header>
+    <AppHeader :title="detail?.customer_name ? `${detail.customer_name} (${code})` : code" />
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       <div v-if="loading" class="text-center py-20">

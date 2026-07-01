@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { DailySales, DepartmentSales, CustomerSales } from '~/types'
-import { AuthToolbar } from '~/composables/useAuth'
 
 const route = useRoute()
 const ym = route.params.ym as string
@@ -134,17 +133,7 @@ const effectiveDailyYMax = computed<number | undefined>(() => dailyYMaxLock.valu
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <button class="text-blue-600 hover:underline text-sm" @click="navigateTo('/')">
-            ← ダッシュボード
-          </button>
-          <h1 class="text-xl font-bold">{{ displayMonth }} 売上詳細</h1>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
-      </div>
-    </header>
+    <AppHeader :title="`${displayMonth} 売上詳細`" />
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       <div v-if="loading" class="text-center py-20">

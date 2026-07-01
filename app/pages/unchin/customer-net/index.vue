@@ -6,8 +6,6 @@
  * 「得意先ネット (売上-支払差額) は別タブに」との指示で独立ページに切り出した。
  * `/unchin` の期間ピッカーとは独立して、このページ単独で期間を指定できる。
  */
-import { AuthToolbar } from '~/composables/useAuth'
-
 type Kind = 'with_billing_only' | 'with_non_billing'
 const KIND_OPTIONS: { value: Kind, label: string }[] = [
   { value: 'with_non_billing', label: '請求＋非請求 (請求K IN (0,2)、default)' },
@@ -33,20 +31,7 @@ function reload() {
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <h1 class="text-xl font-bold">得意先ネット (売上-支払差額)</h1>
-          <NuxtLink
-            to="/unchin"
-            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
-          >
-            ← 運賃リストへ戻る
-          </NuxtLink>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
-      </div>
-    </header>
+    <AppHeader title="得意先ネット (売上-支払差額)" />
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       <div class="bg-white rounded-lg shadow p-4 mb-6 flex items-end gap-3 flex-wrap no-print">

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import VChart from 'vue-echarts'
 import type { CustomerDetailResponse, CustomerYoyWithDept, DepartmentOption } from '~/types'
-import { AuthToolbar } from '~/composables/useAuth'
 
 const { fetchCustomerYoy, fetchCustomerYoyByDept, fetchCustomerDetail, fetchDepartments } = useSalesData()
 
@@ -239,17 +238,7 @@ const lineOption = computed(() => {
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <button class="text-sm text-blue-600 hover:underline" @click="navigateTo('/')">
-            &larr; ダッシュボード
-          </button>
-          <h1 class="text-xl font-bold">得意先 前年同期比ランキング</h1>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
-      </div>
-    </header>
+    <AppHeader title="得意先 前年同期比ランキング" />
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       <!-- 期間セレクタ + 営業所セレクタ -->

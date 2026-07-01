@@ -3,8 +3,6 @@
  * 運賃リスト 明細ページ (Refs ohishi-exp/rust-ichibanboshi#57)。
  * バージョン切替・運賃順表示・一括印刷・値上げ登録 (audit 付き) を提供する。
  */
-import { AuthToolbar } from '~/composables/useAuth'
-
 interface RoutePair { origin: string, dest: string }
 interface UnchinGroup {
   partner_code: string
@@ -336,20 +334,7 @@ function periodTitle(minDate: string | undefined, maxDate: string | undefined): 
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow no-print">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <h1 class="text-xl font-bold">
-            運賃リスト — {{ partnerName || partnerCode }}
-            <span class="text-sm text-gray-400">({{ partnerType === 'subcontractor' ? '傭車先' : '得意先' }})</span>
-          </h1>
-          <NuxtLink to="/unchin" class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100">
-            ← 一覧へ戻る
-          </NuxtLink>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" />
-      </div>
-    </header>
+    <AppHeader :title="`運賃リスト — ${partnerName || partnerCode} (${partnerType === 'subcontractor' ? '傭車先' : '得意先'})`" />
 
     <main class="max-w-5xl mx-auto px-4 py-6" :class="{ 'pb-24': selectedForGroup.size > 0 }">
       <div v-if="loading" class="text-center py-20 text-gray-500">読み込み中...</div>

@@ -17,8 +17,6 @@
  * 抽出して作る (ダッシュボードの構成順位表と同じデータソース)。選択すると
  * 同じ期間のまま `/person/<新担当者>` へ遷移する。
  */
-import { AuthToolbar } from '~/composables/useAuth'
-
 const route = useRoute()
 const router = useRouter()
 const personName = route.params.name as string
@@ -77,22 +75,11 @@ function onPersonChange(newName: string) {
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <button
-            type="button"
-            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-            @click="navigateTo('/')"
-          >
-            &larr; ダッシュボード
-          </button>
-          <h1 class="text-xl font-bold">{{ personName }}</h1>
-          <span class="text-sm text-gray-400">{{ appliedFrom }} 〜 {{ appliedTo }}</span>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
-      </div>
-    </header>
+    <AppHeader :title="personName">
+      <template #extra>
+        <span class="text-sm text-gray-400">{{ appliedFrom }} 〜 {{ appliedTo }}</span>
+      </template>
+    </AppHeader>
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       <div class="bg-white rounded-lg shadow p-4 mb-6 flex items-center gap-4 no-print">
