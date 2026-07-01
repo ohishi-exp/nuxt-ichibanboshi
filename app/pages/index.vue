@@ -147,12 +147,6 @@ const excludeYokoyoko = ref(false)
 /** 期間ラベル (構成順位 表のキャプション用) */
 const periodLabel = computed(() => `${from.value} 〜 ${to.value}`)
 
-/** 担当者ドリルダウン (得意先/傭車先内訳) の選択状態。同じ担当者を再クリックで閉じる。 */
-const selectedPerson = ref<string | null>(null)
-function onSelectPerson(name: string) {
-  selectedPerson.value = selectedPerson.value === name ? null : name
-}
-
 async function loadPersonMonthlyTotals() {
   personMonthlyError.value = ''
   try {
@@ -331,22 +325,13 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
 
         <!-- 担当者 売上構成順位 (期間合計 table)。full width で見やすく
              (user 2026-06-30: 「表は 2 列にしないで」)。行クリックで
-             得意先/傭車先内訳ドリルダウンを開閉する。 -->
+             `/person/[name]` (得意先/傭車先内訳ドリルダウン) へページ遷移する。 -->
         <UriagePersonShareRanking
           :rows="personMonthlyRows"
           v-model:exclude-yokoyoko="excludeYokoyoko"
           :period-label="periodLabel"
-          :selected-person="selectedPerson"
-          @select="onSelectPerson"
-        />
-
-        <!-- 担当者ドリルダウン: 選択中の担当者の得意先別・傭車先別内訳 -->
-        <UriagePersonPartnerBreakdown
-          v-if="selectedPerson"
-          :person-name="selectedPerson"
           :from="from"
           :to="to"
-          v-model:exclude-yokoyoko="excludeYokoyoko"
         />
 
         <!-- 担当者 売上構成推移 (% trend chart)。横横除外 toggle と連動。 -->
