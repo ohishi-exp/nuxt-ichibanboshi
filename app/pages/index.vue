@@ -249,14 +249,14 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
           <h1 class="text-xl font-bold">一番星 売上ダッシュボード</h1>
           <NuxtLink
             to="/admin/recalc"
-            class="text-sm text-blue-600 hover:underline no-print"
+            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
             title="担当者別売上の再計算・verify・R2 同期を実行する管理画面"
           >
             🔧 /admin/recalc
           </NuxtLink>
           <NuxtLink
             to="/unchin"
-            class="text-sm text-blue-600 hover:underline no-print"
+            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
             title="得意先・傭車先別の運賃リスト（値上げ履歴管理）"
           >
             🚚 運賃リスト
