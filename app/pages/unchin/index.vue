@@ -159,21 +159,64 @@ function mergeByBaseCode(rows: PartnerSummary[]): MergedPartnerSummary[] {
  * 金額上位5件だけ色分けし、残りは「その他」に1セグメントへ集約する
  * (実機で最大19件の 得意先H を持つ得意先を確認済み。ただし内訳の軸が営業所
  * (15件/12件しかない構造化マスタ) になったため、実際には5件を超えるケースは稀)。
+ *
+ * 色は「金額順位」ではなく **営業所 (`bumon_code`) 単位で固定**する。順位だと
+ * 行によって同じ色が別の営業所を指してしまい、凡例と実際の色が対応しなくなるため
+ * (フィードバック対応)。`bumonColorMap` (全得意先・傭車先を横断して構築) を参照する。
  */
-const BAR_COLORS = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-fuchsia-500', 'bg-cyan-500']
+const BAR_COLORS = [
+  'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-fuchsia-500', 'bg-cyan-500',
+  'bg-rose-500', 'bg-lime-600', 'bg-indigo-500', 'bg-orange-500', 'bg-teal-500',
+  'bg-purple-500', 'bg-yellow-500',
+]
 const OTHER_BAR_COLOR = 'bg-gray-300'
 const BAR_TOP_N = 5
+
+/**
+ * 得意先別・傭車先別サマリ全体から distinct な営業所 (`bumon_code`) を集め、
+ * 合計金額の大きい順に色を固定割り当てする (パレットを超える分は色を使い回す —
+ * 実機で最大15件だが、それでも収まらない場合の保険)。
+ */
+const bumonColorMap = computed<Map<string, string>>(() => {
+  const totals = new Map<string, { name: string, total: number }>()
+  for (const row of [...customerSummary.value, ...subcontractorSummary.value]) {
+    const key = row.bumon_code || '(未設定)'
+    const cur = totals.get(key) ?? { name: row.bumon_name || '(未設定)', total: 0 }
+    cur.total += row.total
+    totals.set(key, cur)
+  }
+  const ordered = Array.from(totals.entries()).sort((a, b) => b[1].total - a[1].total)
+  const map = new Map<string, string>()
+  ordered.forEach(([code], i) => {
+    map.set(code, BAR_COLORS[i % BAR_COLORS.length]!)
+  })
+  return map
+})
+
+/** 凡例表示用: `bumonColorMap` を色順にラベル付きで並べたもの。 */
+const bumonLegend = computed(() => {
+  const totals = new Map<string, { name: string, total: number }>()
+  for (const row of [...customerSummary.value, ...subcontractorSummary.value]) {
+    const key = row.bumon_code || '(未設定)'
+    const cur = totals.get(key) ?? { name: row.bumon_name || '(未設定)', total: 0 }
+    cur.total += row.total
+    totals.set(key, cur)
+  }
+  return Array.from(totals.entries())
+    .sort((a, b) => b[1].total - a[1].total)
+    .map(([code, v]) => ({ code, name: v.name, colorClass: bumonColorMap.value.get(code)! }))
+})
 
 function buildBreakdownSegments(breakdown: BumonBreakdownEntry[] | undefined, total: number): BarSegment[] {
   if (!breakdown || breakdown.length <= 1) return []
   const top = breakdown.slice(0, BAR_TOP_N)
   const rest = breakdown.slice(BAR_TOP_N)
   const pct = (amount: number) => (total > 0 ? (amount / total) * 100 : 0)
-  const segments: BarSegment[] = top.map((r, i) => ({
+  const segments: BarSegment[] = top.map(r => ({
     label: r.bumon_name,
     amount: r.total,
     pct: pct(r.total),
-    colorClass: BAR_COLORS[i % BAR_COLORS.length]!,
+    colorClass: bumonColorMap.value.get(r.bumon_code || '(未設定)') ?? OTHER_BAR_COLOR,
     title: `${r.bumon_name} (${r.bumon_code}): ${fmtYen(r.total)} (${pct(r.total).toFixed(1)}%)`,
   }))
   if (rest.length > 0) {
@@ -426,9 +469,9 @@ function fmtYen(n: number): string {
         v-if="!loading && !error && groupByCode"
         class="flex items-center gap-3 flex-wrap text-xs text-gray-500 mb-3"
       >
-        <span>営業所内訳バーの色 (自社営業所別・金額順):</span>
-        <span v-for="(c, i) in BAR_COLORS" :key="c" class="inline-flex items-center gap-1">
-          <span class="inline-block w-3 h-3 rounded-sm" :class="c" />{{ i + 1 }}位
+        <span>営業所内訳バーの色 (自社営業所ごとに固定):</span>
+        <span v-for="b in bumonLegend" :key="b.code" class="inline-flex items-center gap-1">
+          <span class="inline-block w-3 h-3 rounded-sm" :class="b.colorClass" />{{ b.name }}
         </span>
         <span class="inline-flex items-center gap-1">
           <span class="inline-block w-3 h-3 rounded-sm" :class="OTHER_BAR_COLOR" />その他
