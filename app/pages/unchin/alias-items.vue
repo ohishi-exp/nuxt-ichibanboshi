@@ -147,7 +147,7 @@ async function deleteGroup(groupId: string) {
       <div class="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
         <div class="flex items-center gap-4">
           <h1 class="text-xl font-bold">品名グルーピング管理</h1>
-          <NuxtLink to="/unchin" class="text-sm text-blue-600 hover:underline">
+          <NuxtLink to="/unchin" class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100">
             ← 運賃リストへ戻る
           </NuxtLink>
         </div>
