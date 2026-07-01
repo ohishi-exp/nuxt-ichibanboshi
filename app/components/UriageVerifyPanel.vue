@@ -4,7 +4,8 @@
  *
  * shell の `scripts/verify_uriage_diff_php_vs_rust.sh` を nuxt UI 化したもの。
  * 単日 × 営業所 × cal の組み合わせを並列 fetch し、進捗バーと NG 行の diff
- * 詳細を表示する。`/admin/verify` と `/admin/recalc` の両方から埋め込む。
+ * 詳細を表示する。`/admin/recalc` に埋め込む (独立ページ `/admin/verify` は
+ * 内容がほぼ重複していたため 2026-07-01 に廃止し、この 1 ページに統合した)。
  */
 
 interface PersonAccum {
