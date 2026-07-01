@@ -43,7 +43,11 @@ function reload() {
     <header class="bg-white shadow">
       <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
         <div class="flex items-center gap-4">
-          <button class="text-sm text-blue-600 hover:underline" @click="navigateTo('/')">
+          <button
+            type="button"
+            class="bg-transparent border-0 p-0 cursor-pointer text-sm text-blue-600 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
+            @click="navigateTo('/')"
+          >
             &larr; ダッシュボード
           </button>
           <h1 class="text-xl font-bold">{{ personName }}</h1>
