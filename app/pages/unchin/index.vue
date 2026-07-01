@@ -19,6 +19,17 @@ interface SummaryResponse {
   source_table: string
   data: PartnerSummary[]
 }
+/** 得意先コードでまとめた行。`breakdown` はまとめ元の 得意先H 別内訳 (2件以上の時のみ)。 */
+interface MergedPartnerSummary extends PartnerSummary {
+  breakdown?: PartnerSummary[]
+}
+interface BarSegment {
+  label: string
+  amount: number
+  pct: number
+  colorClass: string
+  title: string
+}
 
 type PartnerTypeLiteral = 'customer' | 'subcontractor'
 
@@ -77,18 +88,59 @@ function partnerBaseCode(partnerCode: string): string {
   const idx = partnerCode.indexOf('-')
   return idx === -1 ? partnerCode : partnerCode.slice(0, idx)
 }
-function mergeByBaseCode(rows: PartnerSummary[]): PartnerSummary[] {
-  const map = new Map<string, PartnerSummary>()
+function mergeByBaseCode(rows: PartnerSummary[]): MergedPartnerSummary[] {
+  const map = new Map<string, MergedPartnerSummary>()
   for (const row of rows) {
     const base = partnerBaseCode(row.partner_code)
     let group = map.get(base)
     if (!group) {
-      group = { partner_code: base, partner_name: row.partner_name, total: 0 }
+      group = { partner_code: base, partner_name: row.partner_name, total: 0, breakdown: [] }
       map.set(base, group)
     }
     group.total += row.total
+    group.breakdown!.push(row)
   }
-  return Array.from(map.values()).sort((a, b) => b.total - a.total)
+  const result = Array.from(map.values())
+  for (const g of result) {
+    g.breakdown!.sort((a, b) => b.total - a.total)
+    // 1件しかない (= 支店違いが無い) 得意先は内訳バーが不要なので breakdown を捨てる
+    if (g.breakdown!.length <= 1) delete g.breakdown
+  }
+  return result.sort((a, b) => b.total - a.total)
+}
+
+/**
+ * 得意先H 別の内訳を構成比バー用セグメントに変換する (#92)。
+ * 金額上位5件だけ色分けし、残りは「その他」に1セグメントへ集約する
+ * (実機で最大19件の H を持つ得意先を確認済み。全件色分けは視認性を損なうため)。
+ */
+const BAR_COLORS = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-fuchsia-500', 'bg-cyan-500']
+const OTHER_BAR_COLOR = 'bg-gray-300'
+const BAR_TOP_N = 5
+
+function buildBreakdownSegments(breakdown: PartnerSummary[] | undefined, total: number): BarSegment[] {
+  if (!breakdown || breakdown.length <= 1) return []
+  const top = breakdown.slice(0, BAR_TOP_N)
+  const rest = breakdown.slice(BAR_TOP_N)
+  const pct = (amount: number) => (total > 0 ? (amount / total) * 100 : 0)
+  const segments: BarSegment[] = top.map((r, i) => ({
+    label: r.partner_name || r.partner_code,
+    amount: r.total,
+    pct: pct(r.total),
+    colorClass: BAR_COLORS[i % BAR_COLORS.length]!,
+    title: `${r.partner_name || r.partner_code}: ${fmtYen(r.total)} (${pct(r.total).toFixed(1)}%)`,
+  }))
+  if (rest.length > 0) {
+    const restTotal = rest.reduce((sum, r) => sum + r.total, 0)
+    segments.push({
+      label: `その他 (${rest.length}件)`,
+      amount: restTotal,
+      pct: pct(restTotal),
+      colorClass: OTHER_BAR_COLOR,
+      title: `その他 ${rest.length}件: ${fmtYen(restTotal)} (${pct(restTotal).toFixed(1)}%)`,
+    })
+  }
+  return segments
 }
 
 // ── 得意先・傭車先タグ ──
@@ -182,11 +234,11 @@ async function removeTagAssignment(assignmentId: string) {
   await loadTags()
 }
 
-const customerSummaryDisplay = computed(() => {
+const customerSummaryDisplay = computed<MergedPartnerSummary[]>(() => {
   const rows = groupByCode.value ? mergeByBaseCode(customerSummary.value) : customerSummary.value
   return rows.filter(p => passesTagFilter('customer', p.partner_code))
 })
-const subcontractorSummaryDisplay = computed(() => {
+const subcontractorSummaryDisplay = computed<MergedPartnerSummary[]>(() => {
   const rows = groupByCode.value ? mergeByBaseCode(subcontractorSummary.value) : subcontractorSummary.value
   return rows.filter(p => passesTagFilter('subcontractor', p.partner_code))
 })
@@ -336,7 +388,23 @@ function fmtYen(n: number): string {
                 class="border-b border-gray-100 hover:bg-blue-50 cursor-pointer"
                 @click="navigateTo(detailLink('customer', p.partner_code))"
               >
-                <td class="py-1">{{ p.partner_name || p.partner_code }}</td>
+                <td class="py-1">
+                  {{ p.partner_name || p.partner_code }}
+                  <div
+                    v-if="buildBreakdownSegments(p.breakdown, p.total).length > 0"
+                    class="mt-1 flex h-2 w-full max-w-[160px] rounded overflow-hidden bg-gray-100"
+                    :title="`得意先H内訳 ${p.breakdown?.length ?? 0}件`"
+                  >
+                    <span
+                      v-for="(seg, si) in buildBreakdownSegments(p.breakdown, p.total)"
+                      :key="si"
+                      :class="seg.colorClass"
+                      :style="{ width: seg.pct + '%' }"
+                      :title="seg.title"
+                      class="h-full"
+                    />
+                  </div>
+                </td>
                 <td class="py-1" @click.stop>
                   <span
                     v-for="a in tagsFor('customer', p.partner_code)"
@@ -388,7 +456,23 @@ function fmtYen(n: number): string {
                 class="border-b border-gray-100 hover:bg-blue-50 cursor-pointer"
                 @click="navigateTo(detailLink('subcontractor', p.partner_code))"
               >
-                <td class="py-1">{{ p.partner_name || p.partner_code }}</td>
+                <td class="py-1">
+                  {{ p.partner_name || p.partner_code }}
+                  <div
+                    v-if="buildBreakdownSegments(p.breakdown, p.total).length > 0"
+                    class="mt-1 flex h-2 w-full max-w-[160px] rounded overflow-hidden bg-gray-100"
+                    :title="`傭車先H内訳 ${p.breakdown?.length ?? 0}件`"
+                  >
+                    <span
+                      v-for="(seg, si) in buildBreakdownSegments(p.breakdown, p.total)"
+                      :key="si"
+                      :class="seg.colorClass"
+                      :style="{ width: seg.pct + '%' }"
+                      :title="seg.title"
+                      class="h-full"
+                    />
+                  </div>
+                </td>
                 <td class="py-1" @click.stop>
                   <span
                     v-for="a in tagsFor('subcontractor', p.partner_code)"
