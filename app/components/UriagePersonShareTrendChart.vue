@@ -24,12 +24,30 @@ interface MonthlyTotal {
   kensuu_y0?: number
 }
 
-const props = defineProps<{
-  rows: MonthlyTotal[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    rows: MonthlyTotal[]
+    /** ドリルダウンページ (`/person/[name]`) に引き継ぐ期間 (YYYY-MM)。 */
+    from?: string
+    to?: string
+  }>(),
+  { from: '', to: '' },
+)
 
 /** 横横除外フィルタ (v-model:exclude-yokoyoko で親と双方向 binding) */
 const excludeYokoyoko = defineModel<boolean>('excludeYokoyoko', { default: false })
+
+/** area/point クリックで担当者ドリルダウンページへ遷移。「その他」(top N 漏れの合算、
+ * 実在の担当者ではない) はナビゲーション対象から除外する。
+ * user 2026-07-01「担当者売上順位系にも入れて」。 */
+interface ChartClickParams {
+  seriesName?: string
+}
+function onChartClick(params: ChartClickParams) {
+  if (!params.seriesName || params.seriesName === 'その他') return
+  const query = new URLSearchParams({ from: props.from, to: props.to })
+  navigateTo(`/person/${encodeURIComponent(params.seriesName)}?${query.toString()}`)
+}
 
 function pickKingaku(r: MonthlyTotal): number {
   return excludeYokoyoko.value ? (r.kingaku_y0 ?? 0) : r.kingaku
@@ -232,8 +250,13 @@ const option = computed(() => {
     <div v-if="chartData.series.length === 0" class="text-gray-500 text-sm text-center py-10">
       (データなし — 期間を変えるか、<NuxtLink to="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</NuxtLink> で再計算してください)
     </div>
-    <ClientOnly v-else>
-      <VChart :option="option" style="height: 500px" autoresize />
-    </ClientOnly>
+    <template v-else>
+      <p class="text-xs text-gray-500 mb-1 no-print">
+        帯/点をクリックすると得意先・傭車先の内訳を表示します
+      </p>
+      <ClientOnly>
+        <VChart :option="option" style="height: 500px" autoresize @click="onChartClick" />
+      </ClientOnly>
+    </template>
   </div>
 </template>

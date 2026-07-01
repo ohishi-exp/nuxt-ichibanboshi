@@ -24,9 +24,27 @@ interface MonthlyTotal {
   kensuu_y0?: number
 }
 
-const props = defineProps<{
-  rows: MonthlyTotal[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    rows: MonthlyTotal[]
+    /** ドリルダウンページ (`/person/[name]`) に引き継ぐ期間 (YYYY-MM)。 */
+    from?: string
+    to?: string
+  }>(),
+  { from: '', to: '' },
+)
+
+/** line/point クリックで担当者ドリルダウンページへ遷移 (ShareRanking と同じ navigateTo パターン)。
+ * legend クリックは ECharts 標準の系列表示/非表示トグルのまま (ここでは奪わない)。
+ * user 2026-07-01「担当者売上順位系にも入れて」。 */
+interface ChartClickParams {
+  seriesName?: string
+}
+function onChartClick(params: ChartClickParams) {
+  if (!params.seriesName) return
+  const query = new URLSearchParams({ from: props.from, to: props.to })
+  navigateTo(`/person/${encodeURIComponent(params.seriesName)}?${query.toString()}`)
+}
 
 /** 横横除外フィルタ (v-model:exclude-yokoyoko で親と双方向 binding)。
  * true で横横=1 (他社運行委託) を除外した y0 値で集計する。
@@ -202,8 +220,13 @@ const option = computed(() => {
     <div v-if="chartData.series.length === 0" class="text-gray-500 text-sm text-center py-10">
       (データなし — 期間を変えるか、`/admin/recalc` で再計算してください)
     </div>
-    <ClientOnly v-else>
-      <VChart :option="option" style="height: 600px" autoresize />
-    </ClientOnly>
+    <template v-else>
+      <p class="text-xs text-gray-500 mb-1 no-print">
+        線/点をクリックすると得意先・傭車先の内訳を表示します
+      </p>
+      <ClientOnly>
+        <VChart :option="option" style="height: 600px" autoresize @click="onChartClick" />
+      </ClientOnly>
+    </template>
   </div>
 </template>

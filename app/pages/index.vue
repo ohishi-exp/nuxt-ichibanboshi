@@ -317,7 +317,12 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
               rust-ichiban への接続もしくは認証 (CF Access Service Token) を確認
             </div>
           </div>
-          <UriagePersonBumpChart :rows="personMonthlyRows" v-model:exclude-yokoyoko="excludeYokoyoko" />
+          <UriagePersonBumpChart
+            :rows="personMonthlyRows"
+            v-model:exclude-yokoyoko="excludeYokoyoko"
+            :from="from"
+            :to="to"
+          />
           <div v-if="personMonthlyRows.length === 0 && !personMonthlyError" class="text-xs text-gray-500 mt-1 text-right">
             データがあれば自動表示されます。<a href="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</a> で再計算を実行してください。
           </div>
@@ -336,7 +341,12 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
 
         <!-- 担当者 売上構成推移 (% trend chart)。横横除外 toggle と連動。 -->
         <div class="print-section print-chart">
-          <UriagePersonShareTrendChart :rows="personMonthlyRows" v-model:exclude-yokoyoko="excludeYokoyoko" />
+          <UriagePersonShareTrendChart
+            :rows="personMonthlyRows"
+            v-model:exclude-yokoyoko="excludeYokoyoko"
+            :from="from"
+            :to="to"
+          />
         </div>
 
         <div>
