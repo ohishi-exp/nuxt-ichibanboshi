@@ -6,7 +6,9 @@
  * `/unchin/customer-net/<partner_code>?from=&to=&kind=&code=&h=&name=` で遷移する
  * (`customer/[code].vue` と同じ別ページ遷移パターン)。運行 (運転日報明細の行) 単位で
  * 請求 (sales)・傭車支払 (payment)・行単位の差額を一覧表示する。
- * 自社便の行は `subcontractor_name` が空文字なので「(自社便)」と表示する。
+ * 自社便 (傭車を使わなかった運行) は rust-ichibanboshi#69 で SQL 側から常に
+ * 除外されるため、`subcontractor_name` は基本的に空にならない (データ異常時の
+ * 保険として fallback 表示のみ残す)。
  */
 import { AuthToolbar } from '~/composables/useAuth'
 
@@ -160,7 +162,7 @@ const grandDiff = computed(() => rows.value.reduce((s, r) => s + r.diff, 0))
               <tr v-for="(r, i) in rows" :key="i" class="border-b border-gray-100">
                 <td class="py-1">{{ r.sale_date }}</td>
                 <td class="py-1">{{ r.item_name || r.item_code }}</td>
-                <td class="py-1">{{ r.subcontractor_name || '(自社便)' }}</td>
+                <td class="py-1">{{ r.subcontractor_name || '(不明)' }}</td>
                 <td class="py-1 text-xs text-gray-500">{{ r.origin }} → {{ r.dest }}</td>
                 <td class="py-1 text-right">{{ fmtYen(r.sales) }}</td>
                 <td class="py-1 text-right">{{ fmtYen(r.payment) }}</td>
