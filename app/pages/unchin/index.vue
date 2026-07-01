@@ -391,23 +391,7 @@ function fmtYen(n: number): string {
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <AppHeader title="運賃リスト">
-      <template #extra>
-        <NuxtLink
-          to="/unchin/alias-items"
-          class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100"
-        >
-          品名グルーピング管理
-        </NuxtLink>
-        <NuxtLink
-          to="/unchin/customer-net"
-          target="_blank"
-          class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100"
-        >
-          得意先ネット (売上-支払差額) ↗
-        </NuxtLink>
-      </template>
-    </AppHeader>
+    <AppHeader title="運賃リスト" />
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       <div class="bg-white rounded-lg shadow p-4 mb-6 flex items-end gap-3 flex-wrap">
