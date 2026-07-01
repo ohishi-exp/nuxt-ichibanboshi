@@ -1,13 +1,19 @@
 <script setup lang="ts">
 /**
- * 担当者別売上 再計算管理ページ (Refs ohishi-exp/rust-ichibanboshi#37, #38)。
+ * 担当者別売上 再計算・検証 管理ページ (Refs ohishi-exp/rust-ichibanboshi#37, #38, #41)。
  *
  * 「再計算 → R2 同期」を 1 クリックで chain 実行。各行に日次 drill-down と
  * 削除ボタン、page 底に SQLite 全リセットボタン。
  *
  * 月次集計は rust 側で日次の VIEW に降格済 (#38)、UI も日次が SoT として表示する。
+ *
+ * PHP vs Rust 検証 (`UriageVerifyPanel`) はこのページに統合済み (#41)。
+ * 独立ページ `/admin/verify` だった時期があったが、両ページの内容がほぼ同じで
+ * 紛らわしいとの指摘 (user 2026-07-01「再計算と検証　だぶってみえる　ないよう
+ * ほぼおなじ」→「同じ内容含むならいらないじゃん」) を受け、1 ページに再統合した。
  */
 import UriagePersonRankingChart from '~/components/UriagePersonRankingChart.vue'
+import UriageVerifyPanel from '~/components/UriageVerifyPanel.vue'
 
 interface RecalcJob {
   month: string
@@ -516,16 +522,15 @@ function fmtYen(n: number): string {
         </div>
       </div>
 
-      <div class="bg-white rounded-lg shadow p-4 mt-6">
-        <div class="font-semibold text-base">🔍 PHP vs Rust 検証</div>
-        <div class="text-xs text-gray-500 mt-1">
-          recalc が信頼できる前提として、PHP <code>/print-json</code> と Rust の
-          <code>compute_person_sum</code> が 1 円単位で一致しているか確認する専用ページ
-          (<NuxtLink to="/admin/verify" class="text-blue-600 hover:underline">/admin/verify</NuxtLink>) を用意している
-          (以前はこのページに検証パネルを直接埋め込んでいたが、ヘッダーから /admin/verify に
-          直接行けるようになったため、内容が重複していた埋め込みは削除した。
-          user 2026-07-01「再計算と検証　だぶってみえる　内容ほぼおなじ」)。
+      <div class="mt-6">
+        <div class="bg-white rounded-lg shadow p-4 mb-3">
+          <div class="font-semibold text-base">🔍 PHP vs Rust 検証</div>
+          <div class="text-xs text-gray-500 mt-1">
+            recalc が信頼できる前提として、PHP <code>/print-json</code> と Rust の
+            <code>compute_person_sum</code> が 1 円単位で一致しているか確認します。
+          </div>
         </div>
+        <UriageVerifyPanel />
       </div>
 
       <div class="bg-white rounded-lg shadow p-4 mt-6 space-y-3 border-2 border-red-200">
