@@ -29,14 +29,19 @@ const props = withDefaults(
     limit?: number
     /** 表のタイトルに含める期間ラベル (例: "2026-01〜2026-06") */
     periodLabel?: string
-    /** 現在ドリルダウン中の担当者名 (行のハイライト用)。 */
-    selectedPerson?: string | null
+    /** ドリルダウンページ (`/person/[name]`) に引き継ぐ期間 (YYYY-MM)。 */
+    from?: string
+    to?: string
   }>(),
-  { limit: 30, periodLabel: '', selectedPerson: null },
+  { limit: 30, periodLabel: '', from: '', to: '' },
 )
 
-/** 行クリックで担当者ドリルダウンを起動 (親側で得意先/傭車先内訳を表示する)。 */
-const emit = defineEmits<{ select: [personName: string] }>()
+/** 行クリックで担当者ドリルダウンページへ遷移 (customer/[code] と同じ page-navigation パターン、
+ * user 2026-07-01「ドリルダウンはほかのとおなじようにページ変えて」)。 */
+function goToPersonDetail(personName: string) {
+  const params = new URLSearchParams({ from: props.from, to: props.to })
+  navigateTo(`/person/${encodeURIComponent(personName)}?${params.toString()}`)
+}
 
 /** 横横除外フィルタ (v-model:exclude-yokoyoko で親と双方向 binding) */
 const excludeYokoyoko = defineModel<boolean>('excludeYokoyoko', { default: false })
@@ -131,8 +136,7 @@ function fmtMan(yen: number): string {
               v-for="row in ranking"
               :key="row.person_name"
               class="border-t cursor-pointer hover:bg-blue-50"
-              :class="{ 'bg-blue-100': row.person_name === selectedPerson }"
-              @click="emit('select', row.person_name)"
+              @click="goToPersonDetail(row.person_name)"
             >
               <td class="px-3 py-1 text-right font-mono">{{ row.rank }}</td>
               <td class="px-3 py-1">{{ row.person_name }}</td>
