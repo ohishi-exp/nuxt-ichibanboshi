@@ -49,6 +49,9 @@ const excludeYokoyoko = defineModel<boolean>('excludeYokoyoko', { default: false
 function pickKingaku(r: MonthlyTotal): number {
   return excludeYokoyoko.value ? (r.kingaku_y0 ?? 0) : r.kingaku
 }
+function pickYosha(r: MonthlyTotal): number {
+  return excludeYokoyoko.value ? (r.yosha_kingaku_y0 ?? 0) : r.yosha_kingaku
+}
 function pickKensuu(r: MonthlyTotal): number {
   return excludeYokoyoko.value ? (r.kensuu_y0 ?? 0) : r.kensuu
 }
@@ -57,6 +60,8 @@ interface RankingRow {
   rank: number
   person_name: string
   total: number
+  /** 売上 (total) − 傭車金額 (支払金額) の差額。 */
+  diff: number
   kensuu: number
   share: number
 }
@@ -65,10 +70,11 @@ const ranking = computed<RankingRow[]>(() => {
   if (props.rows.length === 0) return []
 
   // 担当者ごとに期間合計
-  const totals = new Map<string, { kingaku: number; kensuu: number }>()
+  const totals = new Map<string, { kingaku: number; yosha: number; kensuu: number }>()
   for (const r of props.rows) {
-    const cur = totals.get(r.person_name) ?? { kingaku: 0, kensuu: 0 }
+    const cur = totals.get(r.person_name) ?? { kingaku: 0, yosha: 0, kensuu: 0 }
     cur.kingaku += pickKingaku(r)
+    cur.yosha += pickYosha(r)
     cur.kensuu += pickKensuu(r)
     totals.set(r.person_name, cur)
   }
@@ -83,12 +89,14 @@ const ranking = computed<RankingRow[]>(() => {
       rank: idx + 1,
       person_name: name,
       total: v.kingaku,
+      diff: v.kingaku - v.yosha,
       kensuu: v.kensuu,
       share: sumAll > 0 ? (v.kingaku / sumAll) * 100 : 0,
     }))
 })
 
 const grandTotal = computed(() => ranking.value.reduce((s, r) => s + r.total, 0))
+const grandDiffTotal = computed(() => ranking.value.reduce((s, r) => s + r.diff, 0))
 
 function fmtYen(yen: number): string {
   return yen.toLocaleString('ja-JP')
@@ -127,6 +135,7 @@ function fmtMan(yen: number): string {
               <th class="text-right px-3 py-2 w-16">順位</th>
               <th class="text-left px-3 py-2">担当者</th>
               <th class="text-right px-3 py-2 w-32">売上</th>
+              <th class="text-right px-3 py-2 w-32">差額 (売上-支払)</th>
               <th class="text-right px-3 py-2 w-24">件数</th>
               <th class="text-right px-3 py-2 w-24">構成比 %</th>
             </tr>
@@ -143,6 +152,9 @@ function fmtMan(yen: number): string {
               <td class="px-3 py-1 text-right font-mono" :title="`${fmtYen(row.total)} 円`">
                 {{ fmtMan(row.total) }}
               </td>
+              <td class="px-3 py-1 text-right font-mono" :title="`${fmtYen(row.diff)} 円`">
+                {{ fmtMan(row.diff) }}
+              </td>
               <td class="px-3 py-1 text-right font-mono">{{ row.kensuu.toLocaleString('ja-JP') }}</td>
               <td class="px-3 py-1 text-right font-mono">{{ row.share.toFixed(1) }}</td>
             </tr>
@@ -152,6 +164,9 @@ function fmtMan(yen: number): string {
               <td class="px-3 py-2 text-right font-semibold" colspan="2">上位 {{ ranking.length }} 名 合計</td>
               <td class="px-3 py-2 text-right font-mono font-semibold" :title="`${fmtYen(grandTotal)} 円`">
                 {{ fmtMan(grandTotal) }}
+              </td>
+              <td class="px-3 py-2 text-right font-mono font-semibold" :title="`${fmtYen(grandDiffTotal)} 円`">
+                {{ fmtMan(grandDiffTotal) }}
               </td>
               <td class="px-3 py-2"></td>
               <td class="px-3 py-2 text-right font-mono font-semibold">100.0</td>

@@ -1,12 +1,20 @@
 <script setup lang="ts">
 /**
- * 担当者ドリルダウン: 得意先別・傭車先別 売上構成 (円グラフ 2 枚)。
+ * 担当者ドリルダウン: 得意先別・傭車先別 売上構成 (円グラフ 2 枚)
+ * + 得意先/傭車先の両方に登場する取引先だけの差額グラフ (3 枚目、トグル表示)。
  *
  * 「担当者 売上構成順位」テーブルの行クリックで起動する。
  * `/api/uriage/person-partner-totals?person=&from=&to=&cal=true` (rust の
  * uriage_person_partner_daily 由来) を叩く。cal は常に true 固定 (全営業所合算、
  * 他の担当者系コンポーネントと同じ規約)。`excludeYokoyoko` は client 側で
  * kingaku/kingaku_y0 を切り替えるだけで再 fetch はしない (同レスポンスに両方入っている)。
+ *
+ * 差額グラフ (3 枚目): user 2026-07-01「取引先毎の差額」→ 3 択で確認したところ
+ * 「得意先と傭車先で同一取引先がある場合の相殺差額のみ」を選択。得意先名と傭車先名
+ * が一致する取引先 (= 同じ会社が売上先にも支払先にもなっているケース) だけを対象に、
+ * 差額 = 得意先売上 − 傭車支払 を横棒グラフで表示する (該当なしなら「共通取引先なし」)。
+ * `partner_code` は得意先C/傭車先Hベースと傭車先C/傭車先Hベースで別名前空間なので、
+ * `partner_name` (取引先名の文字列) で突き合わせる。
  */
 import VChart from 'vue-echarts'
 
@@ -134,6 +142,91 @@ const hasCustomerData = computed(() =>
 const hasSubcontractorData = computed(() =>
   (data.value?.subcontractors ?? []).some((r) => pickKingaku(r) > 0),
 )
+
+/** 3 枚目「差額グラフ」の表示トグル (default off、円グラフ 2 枚が既定表示)。 */
+const showDiffChart = ref(false)
+
+interface DiffRow {
+  name: string
+  customerAmt: number
+  subAmt: number
+  diff: number
+}
+
+/** 得意先名・傭車先名が一致する取引先だけを抽出し、差額 (得意先売上−傭車支払) を計算する。
+ * 名前が同じでも partner_code は別名前空間 (得意先C/H vs 傭車先C/H) なので、
+ * partner_name の文字列一致で突き合わせる。 */
+const diffRows = computed<DiffRow[]>(() => {
+  const customers = data.value?.customers ?? []
+  const subcontractors = data.value?.subcontractors ?? []
+
+  const custMap = new Map<string, number>()
+  for (const r of customers) {
+    const name = r.partner_name || r.partner_code
+    custMap.set(name, (custMap.get(name) ?? 0) + pickKingaku(r))
+  }
+  const subMap = new Map<string, number>()
+  for (const r of subcontractors) {
+    const name = r.partner_name || r.partner_code
+    subMap.set(name, (subMap.get(name) ?? 0) + pickKingaku(r))
+  }
+
+  const rows: DiffRow[] = []
+  for (const [name, customerAmt] of custMap) {
+    if (!subMap.has(name)) continue
+    const subAmt = subMap.get(name) ?? 0
+    if (customerAmt === 0 && subAmt === 0) continue
+    rows.push({ name, customerAmt, subAmt, diff: customerAmt - subAmt })
+  }
+  rows.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+  return rows
+})
+
+const hasDiffData = computed(() => diffRows.value.length > 0)
+
+const diffChartHeight = computed(() => `${Math.max(240, diffRows.value.length * 32 + 80)}px`)
+
+const diffOption = computed(() => {
+  const rows = diffRows.value
+  return {
+    title: {
+      text: '得意先・傭車先 共通取引先 差額 (売上-支払)',
+      left: 'center',
+      textStyle: { fontSize: 13 },
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: unknown) => {
+        const arr = params as Array<{ dataIndex: number }>
+        if (!arr.length) return ''
+        const row = rows[arr[0].dataIndex]
+        if (!row) return ''
+        return `${row.name}<br/>得意先売上: ${fmtMan(row.customerAmt)}円<br/>傭車支払: ${fmtMan(row.subAmt)}円<br/><strong>差額: ${fmtMan(row.diff)}円</strong>`
+      },
+    },
+    grid: { left: 140, right: 40, top: 50, bottom: 30 },
+    xAxis: {
+      type: 'value',
+      axisLabel: { formatter: (v: number) => fmtMan(v) },
+    },
+    yAxis: {
+      type: 'category',
+      inverse: true,
+      data: rows.map((r) => r.name),
+      axisLabel: { fontSize: 11, width: 120, overflow: 'truncate' },
+    },
+    series: [
+      {
+        type: 'bar',
+        data: rows.map((r) => r.diff),
+        itemStyle: {
+          color: (p: { value: number }) => (p.value >= 0 ? '#3ba272' : '#ee6666'),
+        },
+      },
+    ],
+  }
+})
 </script>
 
 <template>
@@ -143,10 +236,16 @@ const hasSubcontractorData = computed(() =>
         {{ personName }} の得意先・傭車先 内訳
         <span v-if="excludeYokoyoko" class="ml-1 text-xs text-purple-700">[横横除外]</span>
       </h3>
-      <label class="flex items-center gap-1 text-xs cursor-pointer select-none no-print">
-        <input v-model="excludeYokoyoko" type="checkbox" class="rounded" />
-        横横除外
-      </label>
+      <div class="flex items-center gap-3 no-print">
+        <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
+          <input v-model="excludeYokoyoko" type="checkbox" class="rounded" />
+          横横除外
+        </label>
+        <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
+          <input v-model="showDiffChart" type="checkbox" class="rounded" />
+          差額グラフ (共通取引先のみ)
+        </label>
+      </div>
     </div>
 
     <div v-if="loading" class="text-center py-10 text-gray-500 text-sm">読み込み中...</div>
@@ -156,21 +255,34 @@ const hasSubcontractorData = computed(() =>
         再試行
       </button>
     </div>
-    <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div>
-        <ClientOnly v-if="hasCustomerData">
-          <VChart :option="customerOption" style="height: 360px" autoresize />
-        </ClientOnly>
-        <p v-else class="text-gray-500 text-sm text-center py-16">
-          (得意先データなし — /admin/recalc で再計算してください)
+    <template v-else>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <ClientOnly v-if="hasCustomerData">
+            <VChart :option="customerOption" style="height: 360px" autoresize />
+          </ClientOnly>
+          <p v-else class="text-gray-500 text-sm text-center py-16">
+            (得意先データなし — /admin/recalc で再計算してください)
+          </p>
+        </div>
+        <div>
+          <ClientOnly v-if="hasSubcontractorData">
+            <VChart :option="subcontractorOption" style="height: 360px" autoresize />
+          </ClientOnly>
+          <p v-else class="text-gray-500 text-sm text-center py-16">傭車先データなし (自車運行のみ)</p>
+        </div>
+      </div>
+
+      <div v-if="showDiffChart" class="mt-4 border-t pt-4">
+        <div v-if="hasDiffData">
+          <ClientOnly>
+            <VChart :option="diffOption" :style="{ height: diffChartHeight }" autoresize />
+          </ClientOnly>
+        </div>
+        <p v-else class="text-gray-500 text-sm text-center py-10">
+          (得意先・傭車先の両方に登場する共通取引先はありません)
         </p>
       </div>
-      <div>
-        <ClientOnly v-if="hasSubcontractorData">
-          <VChart :option="subcontractorOption" style="height: 360px" autoresize />
-        </ClientOnly>
-        <p v-else class="text-gray-500 text-sm text-center py-16">傭車先データなし (自車運行のみ)</p>
-      </div>
-    </div>
+    </template>
   </div>
 </template>
