@@ -5,11 +5,13 @@
  *
  * 従来は各ページが個別にヘッダーを実装しており、ページ間の相互リンクが
  * 「トップへ戻る」等の一方向 (子→親) にしか無かった。主要ページ (ダッシュボード /
- * 運賃リスト / 得意先前年比 / 再計算 / 検証) への横断リンクを常時表示し、
- * どのページからでも他の主要ページへ 1 クリックで移動できるようにする。
+ * 運賃リスト / 得意先前年比 / 再計算 / 検証 / 得意先ネット / 品名グルーピング管理)
+ * への横断リンクを常時表示し、どのページからでも他の主要ページへ 1 クリックで
+ * 移動できるようにする (得意先ネット・品名グルーピング管理は当初 `/unchin` ページ
+ * 固有の extra slot リンクだったが、user 2026-07-01「得意先ネットもいれて」
+ * 「品名グルーピングもいれて」で共通ナビに昇格した)。
  *
- * ページ固有の追加リンク (品名グルーピング管理・得意先ネット等) は
- * `#extra` slot で個別ページ側から差し込む。
+ * それ以外のページ固有の追加リンクは `#extra` slot で個別ページ側から差し込む。
  */
 import { AuthToolbar } from '~/composables/useAuth'
 
@@ -29,6 +31,8 @@ interface NavLink {
 const NAV_LINKS: NavLink[] = [
   { to: '/', label: 'ダッシュボード', icon: '📊' },
   { to: '/unchin', label: '運賃リスト', icon: '🚚' },
+  { to: '/unchin/customer-net', label: '得意先ネット', icon: '💰' },
+  { to: '/unchin/alias-items', label: '品名グルーピング', icon: '🏷️' },
   { to: '/customers', label: '得意先前年比', icon: '📈' },
   { to: '/admin/recalc', label: '再計算', icon: '🔧' },
   { to: '/admin/verify', label: '検証', icon: '🔍' },
@@ -36,10 +40,23 @@ const NAV_LINKS: NavLink[] = [
 
 const route = useRoute()
 
-/** 現在ページがそのリンクの配下 (自身またはサブページ) かどうか。 */
+/**
+ * 現在ページに最も近い (最長 prefix match の) リンクだけをハイライトする。
+ * `/unchin` はより具体的な `/unchin/customer-net` 等のサブページからも prefix
+ * match してしまうため、単純な「該当したら全部ハイライト」だと `/unchin/customer-net`
+ * 表示中に「運賃リスト」と「得意先ネット」が両方ハイライトされてしまう。
+ */
+const activeTo = computed<string | null>(() => {
+  const path = route.path
+  let best: string | null = null
+  for (const l of NAV_LINKS) {
+    const matches = l.to === '/' ? path === '/' : (path === l.to || path.startsWith(`${l.to}/`))
+    if (matches && (!best || l.to.length > best.length)) best = l.to
+  }
+  return best
+})
 function isActive(to: string): boolean {
-  if (to === '/') return route.path === '/'
-  return route.path === to || route.path.startsWith(`${to}/`)
+  return activeTo.value === to
 }
 </script>
 
