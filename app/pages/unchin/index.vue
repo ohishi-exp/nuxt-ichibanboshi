@@ -98,6 +98,14 @@ const subcontractorSummary = ref<PartnerSummary[]>([])
 const customerSource = ref('')
 const subcontractorSource = ref('')
 
+/**
+ * `UnchinSubcontractorNetPanel` に渡す確定値 (「更新」を押すまで変わらない、
+ * index.vue の期間ピッカーと同じ規約)。
+ */
+const appliedFrom = ref(from.value)
+const appliedTo = ref(to.value)
+const appliedKind = ref<Kind>(kind.value)
+
 /** `得意先C-得意先H` の `得意先C` 部分のみ取り出す（クライアント側、server/utils と同ロジック）。 */
 function partnerBaseCode(partnerCode: string): string {
   const idx = partnerCode.indexOf('-')
@@ -360,6 +368,9 @@ async function load() {
     customerSource.value = customerRes.source_table
     subcontractorSummary.value = subcontractorRes.data
     subcontractorSource.value = subcontractorRes.source_table
+    appliedFrom.value = from.value
+    appliedTo.value = to.value
+    appliedKind.value = kind.value
   } catch (e: unknown) {
     const err = e as { statusCode?: number, statusMessage?: string }
     error.value = `読み込みに失敗しました: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
@@ -617,6 +628,10 @@ function fmtYen(n: number): string {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div v-if="!loading && !error" class="mt-6">
+        <UnchinSubcontractorNetPanel :from="appliedFrom" :to="appliedTo" :kind="appliedKind" />
       </div>
     </main>
   </div>
