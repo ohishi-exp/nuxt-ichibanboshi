@@ -3,8 +3,14 @@
  * 品名コードの手動エイリアスグループ管理ページ (Refs ohishi-exp/rust-ichibanboshi#57)。
  * 「この品名Cとこの品名Cは同一」をユーザーが手動で登録する。表示名一致による
  * 自動マージは行わない (#57 確定事項)。
+ *
+ * **得意先・傭車先スコープ必須** (#92 follow-up): 同じ品名コードでも得意先・傭車先が
+ * 違えば単価等の意味が異なりうるため、対象の得意先・傭車先を指定してから
+ * 候補一覧・登録済みグルーピングを表示する。
  */
 import { AuthToolbar } from '~/composables/useAuth'
+
+type PartnerType = 'customer' | 'subcontractor'
 
 interface UnchinAliasGroup {
   group_id: string
@@ -14,11 +20,14 @@ interface UnchinAliasGroup {
   note: string
   registered_by: string
   registered_at: string
+  partner_type: PartnerType
+  partner_code: string
 }
 interface AliasGroupsResponse {
   groups: UnchinAliasGroup[]
 }
 interface CandidateGroup {
+  partner_code: string
   item_code: string
   item_name: string
 }
@@ -30,11 +39,16 @@ interface ItemOption {
   item_name: string
 }
 
-const loading = ref(true)
+const loading = ref(false)
 const error = ref('')
 const groups = ref<UnchinAliasGroup[]>([])
 const itemOptions = ref<ItemOption[]>([])
 const search = ref('')
+
+/** 対象の得意先・傭車先 (#92 follow-up、必須)。 */
+const scopePartnerType = ref<PartnerType>('customer')
+const scopePartnerCode = ref('')
+const scopeLoaded = ref(false)
 
 const newLabel = ref('')
 const newKind = ref<'merge' | 'exception'>('merge')
@@ -61,22 +75,27 @@ watch(selectedCodes, (codes) => {
 })
 
 async function loadGroups() {
-  const res = await $fetch<AliasGroupsResponse>('/api/unchin/alias/items')
+  const params = new URLSearchParams({
+    partner_type: scopePartnerType.value,
+    partner_code: scopePartnerCode.value,
+  })
+  const res = await $fetch<AliasGroupsResponse>(`/api/unchin/alias/items?${params.toString()}`)
   groups.value = res.groups
 }
 
-/** 直近1年分の候補から distinct 品名コード一覧を集める (選択肢提示用、診断用)。 */
+/** 対象の得意先・傭車先の直近1年分の候補から distinct 品名コード一覧を集める。 */
 async function loadItemOptions() {
   const currentYear = new Date().getFullYear()
   const params = new URLSearchParams({
     from: `${currentYear - 1}-01-01`,
     to: `${currentYear + 1}-01-01`,
-    partner_type: 'customer',
+    partner_type: scopePartnerType.value,
     kind: 'with_non_billing',
   })
   const res = await $fetch<CandidatesResponse>(`/api/unchin/candidates?${params.toString()}`)
   const map = new Map<string, string>()
   for (const g of res.groups) {
+    if (g.partner_code !== scopePartnerCode.value) continue
     if (!map.has(g.item_code)) map.set(g.item_code, g.item_name)
   }
   itemOptions.value = Array.from(map.entries())
@@ -84,11 +103,17 @@ async function loadItemOptions() {
     .sort((a, b) => a.item_code.localeCompare(b.item_code))
 }
 
-async function load() {
+async function loadScope() {
+  if (!scopePartnerCode.value.trim()) {
+    saveMsg.value = ''
+    error.value = '得意先・傭車先コードを入力してください'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
     await Promise.all([loadGroups(), loadItemOptions()])
+    scopeLoaded.value = true
   } catch (e: unknown) {
     const err = e as { statusCode?: number, statusMessage?: string }
     error.value = `読み込みに失敗しました: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
@@ -96,8 +121,6 @@ async function load() {
     loading.value = false
   }
 }
-
-onMounted(load)
 
 async function createGroup() {
   saving.value = true
@@ -118,6 +141,8 @@ async function createGroup() {
         item_codes: selectedCodes.value,
         kind: newKind.value,
         note: newNote.value.trim(),
+        partner_type: scopePartnerType.value,
+        partner_code: scopePartnerCode.value,
       },
     })
     saveMsg.value = '✅ 登録しました'
@@ -160,11 +185,37 @@ async function deleteGroup(groupId: string) {
         運転日報明細上の品名コードは、表示名が同じでもコードが異なる場合があります
         （自動マージはしません）。ここで「この品名コードとこの品名コードは同一」を
         手動で登録すると、運賃リスト上でまとめて表示されます。
+        <strong>グルーピングは得意先・傭車先ごとに登録します</strong>
+        （同じ品名コードでも得意先・傭車先が違えば単価等の意味が異なりうるため、
+        他の得意先・傭車先には影響しません）。
       </p>
 
+      <div class="bg-white rounded-lg shadow p-4 mb-6">
+        <h2 class="font-semibold text-base mb-3">対象の得意先・傭車先を指定</h2>
+        <div class="flex items-end gap-3 flex-wrap text-sm">
+          <div>
+            <label class="block text-xs text-gray-500">種別</label>
+            <select v-model="scopePartnerType" class="border rounded px-2 py-1">
+              <option value="customer">得意先</option>
+              <option value="subcontractor">傭車先</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500">得意先・傭車先コード (例: 052042-011)</label>
+            <input v-model="scopePartnerCode" type="text" class="border rounded px-2 py-1 w-56" placeholder="得意先C-得意先H">
+          </div>
+          <button class="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700" @click="loadScope">
+            候補を読み込む
+          </button>
+        </div>
+        <p v-if="error" class="text-sm text-red-600 mt-2">{{ error }}</p>
+        <p class="text-xs text-gray-400 mt-2">
+          コードは運賃リスト一覧ページの各行URL (`/unchin/customer/052042-011` 等) から確認できます。
+        </p>
+      </div>
+
       <div v-if="loading" class="text-center py-20 text-gray-500">読み込み中...</div>
-      <div v-else-if="error" class="text-center py-20 text-red-600">{{ error }}</div>
-      <template v-else>
+      <template v-else-if="scopeLoaded">
         <div class="bg-white rounded-lg shadow p-4 mb-6">
           <h2 class="font-semibold text-base mb-3">新規グルーピング登録</h2>
           <div class="mb-3 flex gap-4 text-sm">
@@ -201,7 +252,9 @@ async function deleteGroup(groupId: string) {
               <span class="text-gray-400 w-20 shrink-0">{{ o.item_code }}</span>
               <span>{{ o.item_name || '(品目未設定)' }}</span>
             </label>
-            <p v-if="filteredOptions.length === 0" class="px-2 py-4 text-center text-gray-400">該当する品名コードがありません</p>
+            <p v-if="filteredOptions.length === 0" class="px-2 py-4 text-center text-gray-400">
+              該当する品名コードがありません (この得意先・傭車先の直近1年分の候補から表示しています)
+            </p>
           </div>
           <p class="text-xs text-gray-500 mb-2">選択中: {{ selectedCodes.length }} 件</p>
           <button
@@ -215,7 +268,12 @@ async function deleteGroup(groupId: string) {
         </div>
 
         <div class="bg-white rounded-lg shadow p-4">
-          <h2 class="font-semibold text-base mb-3">登録済みグルーピング</h2>
+          <h2 class="font-semibold text-base mb-3">
+            登録済みグルーピング
+            <span class="text-sm text-gray-400 font-normal">
+              ({{ scopePartnerType === 'subcontractor' ? '傭車先' : '得意先' }}: {{ scopePartnerCode }})
+            </span>
+          </h2>
           <table class="w-full text-sm">
             <thead class="border-b text-gray-500">
               <tr>
@@ -252,12 +310,15 @@ async function deleteGroup(groupId: string) {
                 </td>
               </tr>
               <tr v-if="groups.length === 0">
-                <td colspan="6" class="py-6 text-center text-gray-400">登録済みグルーピングはありません</td>
+                <td colspan="6" class="py-6 text-center text-gray-400">この得意先・傭車先の登録済みグルーピングはありません</td>
               </tr>
             </tbody>
           </table>
         </div>
       </template>
+      <div v-else class="text-center py-20 text-gray-400">
+        得意先・傭車先コードを入力して「候補を読み込む」を押してください
+      </div>
     </main>
   </div>
 </template>

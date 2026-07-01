@@ -32,6 +32,6 @@ export default defineEventHandler(async (event) => {
   return {
     partner_type: partnerType,
     source_table: res.source_table,
-    groups: groupUnchinRows(res.data, aliasLookup),
+    groups: groupUnchinRows(res.data, partnerType, aliasLookup),
   }
 })
