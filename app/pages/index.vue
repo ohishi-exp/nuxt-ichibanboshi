@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { MonthlySales, DepartmentSales, CustomerSales, YoyComparison, CustomerMonthly, CustomerYoyResponse, DepartmentOption } from '~/types'
-import { AuthToolbar } from '~/composables/useAuth'
 
 const { fetchMonthlySales, fetchDepartmentSales, fetchCustomerSales, fetchYoy, fetchCustomerTrend, fetchCustomerYoy, fetchCustomerYoyByDept, fetchDepartments } = useSalesData()
 
@@ -243,28 +242,7 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <h1 class="text-xl font-bold">一番星 売上ダッシュボード</h1>
-          <NuxtLink
-            to="/admin/recalc"
-            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
-            title="担当者別売上の再計算・verify・R2 同期を実行する管理画面"
-          >
-            🔧 /admin/recalc
-          </NuxtLink>
-          <NuxtLink
-            to="/unchin"
-            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
-            title="得意先・傭車先別の運賃リスト（値上げ履歴管理）"
-          >
-            🚚 運賃リスト
-          </NuxtLink>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
-      </div>
-    </header>
+    <AppHeader title="一番星 売上ダッシュボード" />
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       <div class="bg-white rounded-lg shadow p-4 mb-6 flex items-center gap-4">

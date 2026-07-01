@@ -8,8 +8,6 @@
  * 違えば単価等の意味が異なりうるため、対象の得意先・傭車先を指定してから
  * 候補一覧・登録済みグルーピングを表示する。
  */
-import { AuthToolbar } from '~/composables/useAuth'
-
 type PartnerType = 'customer' | 'subcontractor'
 
 interface UnchinAliasGroup {
@@ -168,17 +166,7 @@ async function deleteGroup(groupId: string) {
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow">
-      <div class="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <h1 class="text-xl font-bold">品名グルーピング管理</h1>
-          <NuxtLink to="/unchin" class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100">
-            ← 運賃リストへ戻る
-          </NuxtLink>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" />
-      </div>
-    </header>
+    <AppHeader title="品名グルーピング管理" max-width-class="max-w-5xl" />
 
     <main class="max-w-5xl mx-auto px-4 py-6">
       <p class="text-sm text-gray-500 mb-4">

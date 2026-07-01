@@ -8,8 +8,6 @@
  * （非請求のダミー得意先等）が行数を食い潰して他の取引先が表示されなくなる
  * 問題があったため、SQL 側で得意先・傭車先ごとに集計済みの値を使う。
  */
-import { AuthToolbar } from '~/composables/useAuth'
-
 interface PartnerSummary {
   partner_code: string
   partner_name: string
@@ -393,33 +391,23 @@ function fmtYen(n: number): string {
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <h1 class="text-xl font-bold">運賃リスト</h1>
-          <NuxtLink
-            to="/"
-            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
-          >
-            ← トップへ戻る
-          </NuxtLink>
-          <NuxtLink
-            to="/unchin/alias-items"
-            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
-          >
-            品名グルーピング管理
-          </NuxtLink>
-          <NuxtLink
-            to="/unchin/customer-net"
-            target="_blank"
-            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100 no-print"
-          >
-            得意先ネット (売上-支払差額) ↗
-          </NuxtLink>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" class="no-print" />
-      </div>
-    </header>
+    <AppHeader title="運賃リスト">
+      <template #extra>
+        <NuxtLink
+          to="/unchin/alias-items"
+          class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100"
+        >
+          品名グルーピング管理
+        </NuxtLink>
+        <NuxtLink
+          to="/unchin/customer-net"
+          target="_blank"
+          class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100"
+        >
+          得意先ネット (売上-支払差額) ↗
+        </NuxtLink>
+      </template>
+    </AppHeader>
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       <div class="bg-white rounded-lg shadow p-4 mb-6 flex items-end gap-3 flex-wrap">

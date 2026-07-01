@@ -10,8 +10,6 @@
  * 除外されるため、`subcontractor_name` は基本的に空にならない (データ異常時の
  * 保険として fallback 表示のみ残す)。
  */
-import { AuthToolbar } from '~/composables/useAuth'
-
 interface CustomerNetDetailRow {
   item_code: string
   item_name: string
@@ -97,23 +95,7 @@ const grandDiff = computed(() => rows.value.reduce((s, r) => s + r.diff, 0))
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow no-print">
-      <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <button
-            type="button"
-            class="text-sm text-gray-700 border border-gray-400 rounded px-3 py-1 bg-white hover:bg-gray-100"
-            @click="navigateTo('/unchin')"
-          >
-            ← 一覧へ戻る
-          </button>
-          <h1 class="text-xl font-bold">
-            得意先ネット明細 — {{ partnerName || partnerCode }}
-          </h1>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" />
-      </div>
-    </header>
+    <AppHeader :title="`得意先ネット明細 — ${partnerName || partnerCode}`" max-width-class="max-w-6xl" />
 
     <main class="max-w-6xl mx-auto px-4 py-6">
       <div class="bg-white rounded-lg shadow p-4 mb-4 flex items-end gap-3 flex-wrap no-print">

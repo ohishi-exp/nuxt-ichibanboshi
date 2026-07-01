@@ -7,7 +7,6 @@
  *
  * 月次集計は rust 側で日次の VIEW に降格済 (#38)、UI も日次が SoT として表示する。
  */
-import { AuthToolbar } from '~/composables/useAuth'
 import UriagePersonRankingChart from '~/components/UriagePersonRankingChart.vue'
 import UriageVerifyPanel from '~/components/UriageVerifyPanel.vue'
 
@@ -304,21 +303,7 @@ function fmtYen(n: number): string {
 
 <template>
   <div class="min-h-screen bg-gray-100">
-    <header class="bg-white shadow">
-      <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-4">
-          <h1 class="text-xl font-bold">担当者別売上 再計算</h1>
-          <NuxtLink
-            to="/"
-            class="text-sm text-blue-600 hover:underline no-print"
-            title="トップページ (売上ダッシュボード) に戻る"
-          >
-            ← トップへ戻る
-          </NuxtLink>
-        </div>
-        <AuthToolbar :show-copy-url="false" :show-qr="false" />
-      </div>
-    </header>
+    <AppHeader title="担当者別売上 再計算" />
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       <div class="bg-white rounded-lg shadow p-4 mb-4 space-y-3">
