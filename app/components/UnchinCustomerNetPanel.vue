@@ -66,8 +66,12 @@ async function load() {
 
 watch(() => [props.from, props.to, props.kind], load, { immediate: true })
 
-/** 差額 (絶対値) の降順で表示する — 儲け/逆ざやのインパクトが大きい得意先を上に出す。 */
-const sortedRows = computed(() => [...rows.value].sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)))
+/**
+ * 差額の降順で表示する (絶対値ではない、符号そのまま)。
+ * プラス (儲け) が大きい得意先が上、マイナス (逆ざや) が大きい得意先が下に来る
+ * (user 2026-07-01「差分 絶対値ではない にして」)。
+ */
+const sortedRows = computed(() => [...rows.value].sort((a, b) => b.diff - a.diff))
 
 const grandSales = computed(() => rows.value.reduce((s, r) => s + r.total_sales, 0))
 const grandPayment = computed(() => rows.value.reduce((s, r) => s + r.total_payment, 0))
@@ -99,26 +103,26 @@ function goToDetail(row: CustomerNetRow) {
   navigateTo(`/unchin/customer-net/${encodeURIComponent(row.partner_code)}?${params.toString()}`)
 }
 
-// チャートは差額インパクトの大きい上位 N 件のみ (件数が多いと見づらいため)
+// チャートは差額 (符号そのまま) の大きい上位 N 件のみ (件数が多いと見づらいため)
 const CHART_TOP_N = 20
 const chartRows = computed(() => sortedRows.value.slice(0, CHART_TOP_N))
 const hasChartData = computed(() => chartRows.value.length > 0)
 const chartHeight = computed(() => `${Math.max(240, chartRows.value.length * 28 + 80)}px`)
 
-/** バークリックでドリルダウンページへ遷移 (chartRows は reverse 表示のため逆算する)。 */
+/** バークリックでドリルダウンページへ遷移。 */
 function onChartClick(params: { dataIndex: number }) {
-  const reversed = [...chartRows.value].reverse()
-  const row = reversed[params.dataIndex]
+  const row = chartRows.value[params.dataIndex]
   if (row) goToDetail(row)
 }
 
 const chartOption = computed(() => {
-  // ECharts の category yAxis は配列先頭が下に来るため、降順のまま渡すと
-  // 一番差額の大きい行が下段に来てしまう。reverse して「上ほど差額大」にする。
-  const rows = [...chartRows.value].reverse()
+  // chartRows は差額 (符号そのまま) 降順。ECharts の category yAxis はデフォルトで
+  // 配列先頭が下段に来るため、そのまま渡すと「上ほど差額小・下ほど差額大」になる
+  // (user 2026-07-01「これは逆順にして」— 従来の「上ほど差額大」から反転)。
+  const rows = chartRows.value
   return {
     title: {
-      text: `得意先ネット 差額 (売上-支払、インパクト上位 ${rows.length} 件)`,
+      text: `得意先ネット 差額 (売上-支払、上位 ${rows.length} 件)`,
       left: 'center',
       textStyle: { fontSize: 13 },
     },
