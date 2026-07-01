@@ -189,6 +189,15 @@ function buildBreakdownSegments(breakdown: BumonBreakdownEntry[] | undefined, to
   return segments
 }
 
+/**
+ * バー全体にホバーした時に出す集約 tooltip (複数行)。個別セグメントは細くて
+ * 正確にホバーしづらいため、バー全体のどこにマウスを乗せても全内訳が見えるように
+ * する (「凡例とホバーを入れてほしい」フィードバック対応)。
+ */
+function buildBreakdownTitle(segments: BarSegment[]): string {
+  return segments.map(s => `${s.label}: ${fmtYen(s.amount)} (${s.pct.toFixed(1)}%)`).join('\n')
+}
+
 // ── 得意先・傭車先タグ ──
 const tagDefs = ref<TagDef[]>([])
 const tagAssignments = ref<TagAssignment[]>([])
@@ -413,6 +422,20 @@ function fmtYen(n: number): string {
         </p>
       </div>
 
+      <div
+        v-if="!loading && !error && groupByCode"
+        class="flex items-center gap-3 flex-wrap text-xs text-gray-500 mb-3"
+      >
+        <span>営業所内訳バーの色 (自社営業所別・金額順):</span>
+        <span v-for="(c, i) in BAR_COLORS" :key="c" class="inline-flex items-center gap-1">
+          <span class="inline-block w-3 h-3 rounded-sm" :class="c" />{{ i + 1 }}位
+        </span>
+        <span class="inline-flex items-center gap-1">
+          <span class="inline-block w-3 h-3 rounded-sm" :class="OTHER_BAR_COLOR" />その他
+        </span>
+        <span class="text-gray-400">(バーにカーソルを合わせると営業所名・金額・比率を表示)</span>
+      </div>
+
       <div v-if="loading" class="text-center py-20 text-gray-500">読み込み中...</div>
       <div v-else-if="error" class="text-center py-20 text-red-600">{{ error }}</div>
       <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -439,7 +462,7 @@ function fmtYen(n: number): string {
                   <div
                     v-if="buildBreakdownSegments(p.breakdown, p.total).length > 0"
                     class="mt-1 flex h-2 w-full max-w-[160px] rounded overflow-hidden bg-gray-100"
-                    :title="`自社営業所別内訳 (${p.breakdown?.length ?? 0}営業所)`"
+                    :title="buildBreakdownTitle(buildBreakdownSegments(p.breakdown, p.total))"
                   >
                     <span
                       v-for="(seg, si) in buildBreakdownSegments(p.breakdown, p.total)"
@@ -507,7 +530,7 @@ function fmtYen(n: number): string {
                   <div
                     v-if="buildBreakdownSegments(p.breakdown, p.total).length > 0"
                     class="mt-1 flex h-2 w-full max-w-[160px] rounded overflow-hidden bg-gray-100"
-                    :title="`自社営業所別内訳 (${p.breakdown?.length ?? 0}営業所)`"
+                    :title="buildBreakdownTitle(buildBreakdownSegments(p.breakdown, p.total))"
                   >
                     <span
                       v-for="(seg, si) in buildBreakdownSegments(p.breakdown, p.total)"
