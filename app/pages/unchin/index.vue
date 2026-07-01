@@ -99,7 +99,7 @@ const customerSource = ref('')
 const subcontractorSource = ref('')
 
 /**
- * `UnchinSubcontractorNetPanel` に渡す確定値 (「更新」を押すまで変わらない、
+ * `UnchinCustomerNetPanel` に渡す確定値 (「更新」を押すまで変わらない、
  * index.vue の期間ピッカーと同じ規約)。
  */
 const appliedFrom = ref(from.value)
@@ -631,7 +631,7 @@ function fmtYen(n: number): string {
       </div>
 
       <div v-if="!loading && !error" class="mt-6">
-        <UnchinSubcontractorNetPanel :from="appliedFrom" :to="appliedTo" :kind="appliedKind" />
+        <UnchinCustomerNetPanel :from="appliedFrom" :to="appliedTo" :kind="appliedKind" />
       </div>
     </main>
   </div>
