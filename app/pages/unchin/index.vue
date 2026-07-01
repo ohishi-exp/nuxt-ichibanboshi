@@ -14,14 +14,27 @@ interface PartnerSummary {
   partner_code: string
   partner_name: string
   total: number
+  /**
+   * `得意先ﾏｽﾀ`/`傭車先ﾏｽﾀ`.`部門C`（自社側の受注部門/営業所コード。得意先・傭車先
+   * 自身の拠点とは別軸。#92 follow-up 実機調査で確認済み、rust-ichibanboshi#64）。
+   */
+  bumon_code: string
+  /** `部門ﾏｽﾀ.部門N`（自社営業所名）。未設定・未マッチ時は空文字。 */
+  bumon_name: string
 }
 interface SummaryResponse {
   source_table: string
   data: PartnerSummary[]
 }
-/** 得意先コードでまとめた行。`breakdown` はまとめ元の 得意先H 別内訳 (2件以上の時のみ)。 */
+/** 得意先C 単位でまとめた時の内訳 1 件 (自社営業所単位、#92 follow-up)。 */
+interface BumonBreakdownEntry {
+  bumon_code: string
+  bumon_name: string
+  total: number
+}
+/** 得意先コードでまとめた行。`breakdown` は自社営業所 (部門) 別内訳 (2件以上の時のみ)。 */
 interface MergedPartnerSummary extends PartnerSummary {
-  breakdown?: PartnerSummary[]
+  breakdown?: BumonBreakdownEntry[]
 }
 interface BarSegment {
   label: string
@@ -72,11 +85,13 @@ const from = ref(`${currentYear}-01-01`)
 const to = ref(`${currentYear + 1}-01-01`)
 const kind = ref<Kind>('with_non_billing')
 /**
- * 得意先C (得意先H 無視) でまとめる opt-in トグル。default OFF。
+ * 得意先C (得意先H 無視) でまとめるトグル。**default ON**
+ * (#92 follow-up でデフォルト表示に変更。自社営業所別の構成比バーを常時見せるため)。
  * 表示名一致による自動マージはしない (#57 確定事項。得意先H は支店違い等で正当に
- * 異なる場合があるため)。ON の時だけ得意先Cでサーバー集計を合算し直す。
+ * 異なる場合があるため) — あくまで得意先C単位の合算であり、名前一致でのマージはしない。
+ * OFF にすれば従来通り 得意先H 単位のバラ表示に戻せる。
  */
-const groupByCode = ref(false)
+const groupByCode = ref(true)
 
 const customerSummary = ref<PartnerSummary[]>([])
 const subcontractorSummary = ref<PartnerSummary[]>([])
@@ -88,47 +103,78 @@ function partnerBaseCode(partnerCode: string): string {
   const idx = partnerCode.indexOf('-')
   return idx === -1 ? partnerCode : partnerCode.slice(0, idx)
 }
+/**
+ * 得意先C 単位でまとめ、自社営業所 (`部門C`/`部門N`) 別の内訳も合わせて集計する。
+ *
+ * 内訳の軸は「得意先H (支店名の自由記述テキスト)」ではなく「自社営業所 (`部門C`)」
+ * にしている — 得意先N は H と1:1対応せず表記揺れも多い自由記述だが (#93 実機調査)、
+ * `部門C` は `部門ﾏｽﾀ` に紐づく構造化データで会社ごとに意味のある値を持つため
+ * (#92 follow-up、rust-ichibanboshi#64 で summary に追加)。
+ */
 function mergeByBaseCode(rows: PartnerSummary[]): MergedPartnerSummary[] {
-  const map = new Map<string, MergedPartnerSummary>()
+  interface Building extends MergedPartnerSummary {
+    bumonMap: Map<string, BumonBreakdownEntry>
+  }
+  const map = new Map<string, Building>()
   for (const row of rows) {
     const base = partnerBaseCode(row.partner_code)
     let group = map.get(base)
     if (!group) {
-      group = { partner_code: base, partner_name: row.partner_name, total: 0, breakdown: [] }
+      group = {
+        partner_code: base,
+        partner_name: row.partner_name,
+        total: 0,
+        bumon_code: row.bumon_code,
+        bumon_name: row.bumon_name,
+        bumonMap: new Map(),
+      }
       map.set(base, group)
     }
     group.total += row.total
-    group.breakdown!.push(row)
+    const bumonKey = row.bumon_code || '(未設定)'
+    let bumon = group.bumonMap.get(bumonKey)
+    if (!bumon) {
+      bumon = { bumon_code: row.bumon_code, bumon_name: row.bumon_name || '(未設定)', total: 0 }
+      group.bumonMap.set(bumonKey, bumon)
+    }
+    bumon.total += row.total
   }
-  const result = Array.from(map.values())
-  for (const g of result) {
-    g.breakdown!.sort((a, b) => b.total - a.total)
-    // 1件しかない (= 支店違いが無い) 得意先は内訳バーが不要なので breakdown を捨てる
-    if (g.breakdown!.length <= 1) delete g.breakdown
-  }
+  const result = Array.from(map.values()).map((g) => {
+    const breakdown = Array.from(g.bumonMap.values()).sort((a, b) => b.total - a.total)
+    return {
+      partner_code: g.partner_code,
+      partner_name: g.partner_name,
+      total: g.total,
+      bumon_code: g.bumon_code,
+      bumon_name: g.bumon_name,
+      // 自社営業所が1件だけ (= 内訳する意味がない) なら breakdown を持たせない
+      breakdown: breakdown.length > 1 ? breakdown : undefined,
+    }
+  })
   return result.sort((a, b) => b.total - a.total)
 }
 
 /**
- * 得意先H 別の内訳を構成比バー用セグメントに変換する (#92)。
+ * 自社営業所 (`部門`) 別の内訳を構成比バー用セグメントに変換する (#92)。
  * 金額上位5件だけ色分けし、残りは「その他」に1セグメントへ集約する
- * (実機で最大19件の H を持つ得意先を確認済み。全件色分けは視認性を損なうため)。
+ * (実機で最大19件の 得意先H を持つ得意先を確認済み。ただし内訳の軸が営業所
+ * (15件/12件しかない構造化マスタ) になったため、実際には5件を超えるケースは稀)。
  */
 const BAR_COLORS = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-fuchsia-500', 'bg-cyan-500']
 const OTHER_BAR_COLOR = 'bg-gray-300'
 const BAR_TOP_N = 5
 
-function buildBreakdownSegments(breakdown: PartnerSummary[] | undefined, total: number): BarSegment[] {
+function buildBreakdownSegments(breakdown: BumonBreakdownEntry[] | undefined, total: number): BarSegment[] {
   if (!breakdown || breakdown.length <= 1) return []
   const top = breakdown.slice(0, BAR_TOP_N)
   const rest = breakdown.slice(BAR_TOP_N)
   const pct = (amount: number) => (total > 0 ? (amount / total) * 100 : 0)
   const segments: BarSegment[] = top.map((r, i) => ({
-    label: r.partner_name || r.partner_code,
+    label: r.bumon_name,
     amount: r.total,
     pct: pct(r.total),
     colorClass: BAR_COLORS[i % BAR_COLORS.length]!,
-    title: `${r.partner_name || r.partner_code}: ${fmtYen(r.total)} (${pct(r.total).toFixed(1)}%)`,
+    title: `${r.bumon_name} (${r.bumon_code}): ${fmtYen(r.total)} (${pct(r.total).toFixed(1)}%)`,
   }))
   if (rest.length > 0) {
     const restTotal = rest.reduce((sum, r) => sum + r.total, 0)
@@ -323,7 +369,7 @@ function fmtYen(n: number): string {
         </button>
         <label class="flex items-center gap-1 text-sm text-gray-600 ml-2">
           <input v-model="groupByCode" type="checkbox" class="rounded">
-          得意先コードでまとめる (支店違いを合算、opt-in)
+          得意先コードでまとめる (支店違いを合算、default ON。OFFでH単位のバラ表示)
         </label>
       </div>
 
@@ -393,7 +439,7 @@ function fmtYen(n: number): string {
                   <div
                     v-if="buildBreakdownSegments(p.breakdown, p.total).length > 0"
                     class="mt-1 flex h-2 w-full max-w-[160px] rounded overflow-hidden bg-gray-100"
-                    :title="`得意先H内訳 ${p.breakdown?.length ?? 0}件`"
+                    :title="`自社営業所別内訳 (${p.breakdown?.length ?? 0}営業所)`"
                   >
                     <span
                       v-for="(seg, si) in buildBreakdownSegments(p.breakdown, p.total)"
@@ -461,7 +507,7 @@ function fmtYen(n: number): string {
                   <div
                     v-if="buildBreakdownSegments(p.breakdown, p.total).length > 0"
                     class="mt-1 flex h-2 w-full max-w-[160px] rounded overflow-hidden bg-gray-100"
-                    :title="`傭車先H内訳 ${p.breakdown?.length ?? 0}件`"
+                    :title="`自社営業所別内訳 (${p.breakdown?.length ?? 0}営業所)`"
                   >
                     <span
                       v-for="(seg, si) in buildBreakdownSegments(p.breakdown, p.total)"
