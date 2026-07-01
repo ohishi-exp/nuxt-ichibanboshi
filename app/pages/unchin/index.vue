@@ -147,11 +147,23 @@ function mergeByBaseCode(rows: PartnerSummary[]): MergedPartnerSummary[] {
       total: g.total,
       bumon_code: g.bumon_code,
       bumon_name: g.bumon_name,
-      // 自社営業所が1件だけ (= 内訳する意味がない) なら breakdown を持たせない
-      breakdown: breakdown.length > 1 ? breakdown : undefined,
+      // 自社営業所が1件だけでも breakdown を持たせる (= 単色100%のバーとして表示する。
+      // user 2026-07-01「営業所別バーをすべての得意先、傭車先にも表示して」)。
+      breakdown,
     }
   })
   return result.sort((a, b) => b.total - a.total)
+}
+
+/**
+ * テーブル行 (グループ済み `MergedPartnerSummary` またはグループ無し `PartnerSummary`)
+ * から営業所内訳バー用の breakdown を取り出す。`groupByCode` OFF 時の生 `PartnerSummary`
+ * は breakdown を持たないため、自分自身の bumon_code/bumon_name を単一要素の内訳として
+ * 合成する (= どちらのモードでも常にバーを表示できるようにする)。
+ */
+function rowBreakdown(p: MergedPartnerSummary): BumonBreakdownEntry[] {
+  if (p.breakdown && p.breakdown.length > 0) return p.breakdown
+  return [{ bumon_code: p.bumon_code, bumon_name: p.bumon_name || '(未設定)', total: p.total }]
 }
 
 /**
@@ -159,6 +171,10 @@ function mergeByBaseCode(rows: PartnerSummary[]): MergedPartnerSummary[] {
  * 金額上位5件だけ色分けし、残りは「その他」に1セグメントへ集約する
  * (実機で最大19件の 得意先H を持つ得意先を確認済み。ただし内訳の軸が営業所
  * (15件/12件しかない構造化マスタ) になったため、実際には5件を超えるケースは稀)。
+ *
+ * 営業所が1件だけの得意先・傭車先でも単色100%のバーとして表示する
+ * (user 2026-07-01「営業所別バーをすべての得意先、傭車先にも表示して」— 従来は
+ * 2件以上の時のみ表示していた)。
  *
  * 色は「金額順位」ではなく **営業所 (`bumon_code`) 単位で固定**する。順位だと
  * 行によって同じ色が別の営業所を指してしまい、凡例と実際の色が対応しなくなるため
@@ -208,7 +224,7 @@ const bumonLegend = computed(() => {
 })
 
 function buildBreakdownSegments(breakdown: BumonBreakdownEntry[] | undefined, total: number): BarSegment[] {
-  if (!breakdown || breakdown.length <= 1) return []
+  if (!breakdown || breakdown.length === 0) return []
   const top = breakdown.slice(0, BAR_TOP_N)
   const rest = breakdown.slice(BAR_TOP_N)
   const pct = (amount: number) => (total > 0 ? (amount / total) * 100 : 0)
@@ -510,12 +526,12 @@ function fmtYen(n: number): string {
                 <td class="py-1">
                   {{ p.partner_name || p.partner_code }}
                   <div
-                    v-if="buildBreakdownSegments(p.breakdown, p.total).length > 0"
+                    v-if="buildBreakdownSegments(rowBreakdown(p), p.total).length > 0"
                     class="mt-1 flex h-2 w-full max-w-[160px] rounded overflow-hidden bg-gray-100"
-                    :title="buildBreakdownTitle(buildBreakdownSegments(p.breakdown, p.total))"
+                    :title="buildBreakdownTitle(buildBreakdownSegments(rowBreakdown(p), p.total))"
                   >
                     <span
-                      v-for="(seg, si) in buildBreakdownSegments(p.breakdown, p.total)"
+                      v-for="(seg, si) in buildBreakdownSegments(rowBreakdown(p), p.total)"
                       :key="si"
                       :class="seg.colorClass"
                       :style="{ width: seg.pct + '%' }"
@@ -578,12 +594,12 @@ function fmtYen(n: number): string {
                 <td class="py-1">
                   {{ p.partner_name || p.partner_code }}
                   <div
-                    v-if="buildBreakdownSegments(p.breakdown, p.total).length > 0"
+                    v-if="buildBreakdownSegments(rowBreakdown(p), p.total).length > 0"
                     class="mt-1 flex h-2 w-full max-w-[160px] rounded overflow-hidden bg-gray-100"
-                    :title="buildBreakdownTitle(buildBreakdownSegments(p.breakdown, p.total))"
+                    :title="buildBreakdownTitle(buildBreakdownSegments(rowBreakdown(p), p.total))"
                   >
                     <span
-                      v-for="(seg, si) in buildBreakdownSegments(p.breakdown, p.total)"
+                      v-for="(seg, si) in buildBreakdownSegments(rowBreakdown(p), p.total)"
                       :key="si"
                       :class="seg.colorClass"
                       :style="{ width: seg.pct + '%' }"
