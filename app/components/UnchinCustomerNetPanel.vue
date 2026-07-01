@@ -13,7 +13,9 @@
  * 「得意先請求」が誤解を招く (自分自身への請求ではなく、その傭車先を使った
  * 様々な得意先の請求合計) との指摘を受け、得意先軸に変更した
  * (user 2026-07-01「傭車先じゃなくて得意先にグラフ直して」)。
- * 自社便のみの得意先は total_payment=0 となり diff = total_sales になる。
+ * 自社便 (傭車を使わなかった運行) は rust-ichibanboshi#69 で SQL 側から常に
+ * 除外されるようになった (トグルは設けない、user 確認「トグルじゃない
+ * もとからなくして グラフも」)。
  */
 import VChart from 'vue-echarts'
 
@@ -159,9 +161,9 @@ const chartOption = computed(() => {
   <div class="bg-white rounded-lg shadow p-4">
     <h2 class="font-semibold text-base mb-1">得意先ネット (売上-支払差額)</h2>
     <p class="text-xs text-gray-400 mb-3">
-      得意先ごとの請求合計と、その運行で傭車を使った分の支払を同一運行から突き合わせた
-      差額 (粗利に相当。名寄せではなく「同一運行内の両建て」方式、自社便のみの得意先は
-      差額=請求額)。{{ sourceTable }}
+      得意先ごとに、傭車を使った運行の請求合計と支払を同一運行から突き合わせた差額
+      (粗利に相当。名寄せではなく「同一運行内の両建て」方式。自社便のみの運行は対象外)。
+      {{ sourceTable }}
     </p>
 
     <div v-if="loading" class="text-center py-10 text-gray-500 text-sm">読み込み中...</div>
