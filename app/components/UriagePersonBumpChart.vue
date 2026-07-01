@@ -61,9 +61,16 @@ function pickYosha(r: MonthlyTotal): number {
   return excludeYokoyoko.value ? (r.yosha_kingaku_y0 ?? 0) : r.yosha_kingaku
 }
 
-/** ツールチップの差額表示トグル (default off、user 2026-07-01
- * 「差額表示はトグルにして」)。 */
+/** 差額表示トグル (default off)。ON にすると順位そのものを 差額 (売上-支払) 基準で
+ * 再計算する (user 2026-07-01「差額表示で順位変動しない?」— ツールチップに注記
+ * するだけでは不十分で、rank/top N 自体を差額ベースに切り替える必要があった)。 */
 const showDiff = ref(false)
+
+/** 現在の表示モードに応じた集計値 (売上 or 差額) を返す。 */
+function pickMetric(r: MonthlyTotal): number {
+  const kingaku = pickKingaku(r)
+  return showDiff.value ? kingaku - pickYosha(r) : kingaku
+}
 
 // 30 名に拡張 (user 2026-06-30 「30 位にしたら? とりあえず 20 人くらいしかいないが」)。
 const TOP_N = 30
@@ -80,9 +87,8 @@ interface ChartData {
   series: Array<{
     name: string
     ranks: (number | null)[]
+    /** 月別 集計値 (showDiff=false: 売上 / showDiff=true: 差額) */
     values: (number | null)[]
-    /** 月別 差額 (売上-支払、= kingaku - yosha_kingaku) */
-    diffs: (number | null)[]
     total: number
   }>
 }
@@ -95,40 +101,34 @@ const chartData = computed<ChartData>(() => {
   for (const r of props.rows) monthsSet.add(r.month)
   const months = Array.from(monthsSet).sort()
 
-  // 月 → person → kingaku の Map (集計済み前提だが念のため SUM)
-  // excludeYokoyoko=true なら kingaku_y0 (横横=0 のみ) を使う
+  // 月 → person → 集計値 (showDiff トグルで 売上/差額 が切り替わる)
   const byMonth = new Map<string, Map<string, number>>()
-  // 月 → person → yosha_kingaku の Map (差額計算用)
-  const byMonthYosha = new Map<string, Map<string, number>>()
   for (const r of props.rows) {
     if (!byMonth.has(r.month)) byMonth.set(r.month, new Map())
     const m = byMonth.get(r.month)!
-    m.set(r.person_name, (m.get(r.person_name) ?? 0) + pickKingaku(r))
-
-    if (!byMonthYosha.has(r.month)) byMonthYosha.set(r.month, new Map())
-    const my = byMonthYosha.get(r.month)!
-    my.set(r.person_name, (my.get(r.person_name) ?? 0) + pickYosha(r))
+    m.set(r.person_name, (m.get(r.person_name) ?? 0) + pickMetric(r))
   }
 
-  // 月ごとに rank 計算 (kingaku DESC)。同額は名前順で安定 sort
+  // 月ごとに rank 計算 (集計値 DESC)。同額は名前順で安定 sort。
+  // 差額モードはマイナスもあり得るので v!==0、売上モードは従来通り v>0 のみ対象。
   const monthlyRank = new Map<string, Map<string, number>>() // month → person → rank (1-indexed)
   for (const month of months) {
     const m = byMonth.get(month)!
     const sorted = Array.from(m.entries())
-      .filter(([_, v]) => v > 0)
+      .filter(([_, v]) => (showDiff.value ? v !== 0 : v > 0))
       .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
     const rankMap = new Map<string, number>()
     sorted.forEach(([name], i) => rankMap.set(name, i + 1))
     monthlyRank.set(month, rankMap)
   }
 
-  // 期間合計で top N を決める
+  // 期間合計で top N を決める (showDiff トグルで基準が売上/差額に切り替わる)
   const totals = new Map<string, number>()
   for (const r of props.rows) {
-    totals.set(r.person_name, (totals.get(r.person_name) ?? 0) + pickKingaku(r))
+    totals.set(r.person_name, (totals.get(r.person_name) ?? 0) + pickMetric(r))
   }
   const topPersons = Array.from(totals.entries())
-    .filter(([_, v]) => v > 0)
+    .filter(([_, v]) => (showDiff.value ? v !== 0 : v > 0))
     .sort((a, b) => b[1] - a[1])
     .slice(0, TOP_N)
     .map(([name]) => name)
@@ -137,11 +137,6 @@ const chartData = computed<ChartData>(() => {
     name,
     ranks: months.map((m) => monthlyRank.get(m)?.get(name) ?? null),
     values: months.map((m) => byMonth.get(m)?.get(name) ?? null),
-    diffs: months.map((m) => {
-      const v = byMonth.get(m)?.get(name)
-      if (v == null) return null
-      return v - (byMonthYosha.get(m)?.get(name) ?? 0)
-    }),
     total: totals.get(name) ?? 0,
   }))
 
@@ -165,9 +160,11 @@ const option = computed(() => {
   const d = chartData.value
   if (!d.series.length) return {}
 
+  const metricLabel = showDiff.value ? '差額' : '売上'
+
   return {
     title: {
-      text: `担当者 売上順位推移 (期間合計 上位 ${d.series.length} 名)${excludeYokoyoko.value ? ' [横横除外]' : ''}`,
+      text: `担当者 ${metricLabel}順位推移 (期間合計 上位 ${d.series.length} 名)${excludeYokoyoko.value ? ' [横横除外]' : ''}`,
       left: 'center',
     },
     tooltip: {
@@ -178,10 +175,8 @@ const option = computed(() => {
         if (!s) return ''
         const rank = s.ranks[param.dataIndex]
         const value = s.values[param.dataIndex]
-        const diff = s.diffs[param.dataIndex]
         if (rank == null || value == null) return `<strong>${param.seriesName}</strong><br/>${d.months[param.dataIndex]}: データなし`
-        const diffLine = showDiff.value && diff != null ? `<br/>差額 (売上-支払): ${fmtMan(diff)}円` : ''
-        return `<strong>${param.seriesName}</strong><br/>${d.months[param.dataIndex]}: ${rank} 位 (${fmtMan(value)}円)${diffLine}`
+        return `<strong>${param.seriesName}</strong><br/>${d.months[param.dataIndex]}: ${rank} 位 (${metricLabel} ${fmtMan(value)}円)`
       },
     },
     legend: {
@@ -242,7 +237,7 @@ const option = computed(() => {
     <div class="flex items-center justify-end gap-3 mb-1 no-print">
       <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
         <input v-model="showDiff" type="checkbox" class="rounded" />
-        差額表示 (売上-支払)
+        差額 (売上-支払) で順位表示
       </label>
       <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
         <input v-model="excludeYokoyoko" type="checkbox" class="rounded" />
