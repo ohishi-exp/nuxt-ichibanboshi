@@ -56,6 +56,10 @@ const excludeYokoyoko = defineModel<boolean>('excludeYokoyoko', { default: false
 function pickKingaku(r: MonthlyTotal): number {
   return excludeYokoyoko.value ? (r.kingaku_y0 ?? 0) : r.kingaku
 }
+/** 横横除外フィルタを考慮した yosha_kingaku 取得 (差額 = kingaku - yosha 用)。 */
+function pickYosha(r: MonthlyTotal): number {
+  return excludeYokoyoko.value ? (r.yosha_kingaku_y0 ?? 0) : r.yosha_kingaku
+}
 
 // 30 名に拡張 (user 2026-06-30 「30 位にしたら? とりあえず 20 人くらいしかいないが」)。
 const TOP_N = 30
@@ -69,7 +73,14 @@ const colors = [
 
 interface ChartData {
   months: string[]
-  series: Array<{ name: string; ranks: (number | null)[]; values: (number | null)[]; total: number }>
+  series: Array<{
+    name: string
+    ranks: (number | null)[]
+    values: (number | null)[]
+    /** 月別 差額 (売上-支払、= kingaku - yosha_kingaku) */
+    diffs: (number | null)[]
+    total: number
+  }>
 }
 
 const chartData = computed<ChartData>(() => {
@@ -83,10 +94,16 @@ const chartData = computed<ChartData>(() => {
   // 月 → person → kingaku の Map (集計済み前提だが念のため SUM)
   // excludeYokoyoko=true なら kingaku_y0 (横横=0 のみ) を使う
   const byMonth = new Map<string, Map<string, number>>()
+  // 月 → person → yosha_kingaku の Map (差額計算用)
+  const byMonthYosha = new Map<string, Map<string, number>>()
   for (const r of props.rows) {
     if (!byMonth.has(r.month)) byMonth.set(r.month, new Map())
     const m = byMonth.get(r.month)!
     m.set(r.person_name, (m.get(r.person_name) ?? 0) + pickKingaku(r))
+
+    if (!byMonthYosha.has(r.month)) byMonthYosha.set(r.month, new Map())
+    const my = byMonthYosha.get(r.month)!
+    my.set(r.person_name, (my.get(r.person_name) ?? 0) + pickYosha(r))
   }
 
   // 月ごとに rank 計算 (kingaku DESC)。同額は名前順で安定 sort
@@ -116,6 +133,11 @@ const chartData = computed<ChartData>(() => {
     name,
     ranks: months.map((m) => monthlyRank.get(m)?.get(name) ?? null),
     values: months.map((m) => byMonth.get(m)?.get(name) ?? null),
+    diffs: months.map((m) => {
+      const v = byMonth.get(m)?.get(name)
+      if (v == null) return null
+      return v - (byMonthYosha.get(m)?.get(name) ?? 0)
+    }),
     total: totals.get(name) ?? 0,
   }))
 
@@ -152,8 +174,10 @@ const option = computed(() => {
         if (!s) return ''
         const rank = s.ranks[param.dataIndex]
         const value = s.values[param.dataIndex]
+        const diff = s.diffs[param.dataIndex]
         if (rank == null || value == null) return `<strong>${param.seriesName}</strong><br/>${d.months[param.dataIndex]}: データなし`
-        return `<strong>${param.seriesName}</strong><br/>${d.months[param.dataIndex]}: ${rank} 位 (${fmtMan(value)}円)`
+        const diffLine = diff == null ? '' : `<br/>差額 (売上-支払): ${fmtMan(diff)}円`
+        return `<strong>${param.seriesName}</strong><br/>${d.months[param.dataIndex]}: ${rank} 位 (${fmtMan(value)}円)${diffLine}`
       },
     },
     legend: {

@@ -52,6 +52,10 @@ function onChartClick(params: ChartClickParams) {
 function pickKingaku(r: MonthlyTotal): number {
   return excludeYokoyoko.value ? (r.kingaku_y0 ?? 0) : r.kingaku
 }
+/** 横横除外フィルタを考慮した yosha_kingaku 取得 (差額 = kingaku - yosha 用)。 */
+function pickYosha(r: MonthlyTotal): number {
+  return excludeYokoyoko.value ? (r.yosha_kingaku_y0 ?? 0) : r.yosha_kingaku
+}
 
 // 30 名に拡張 (user 2026-06-30 「30 位にしたら? とりあえず 20 人くらいしかいないが」)。
 // 実担当者数 (~20 名) を上回るので「その他」は 0 になり stack は自然に 100% へ。
@@ -67,8 +71,8 @@ const colors = [
 
 interface ChartData {
   months: string[]
-  /** 各 series は person ごと、values は月別 share (%) */
-  series: Array<{ name: string; values: number[]; total: number; sharePct: number }>
+  /** 各 series は person ごと、values は月別 share (%)、diffs は月別 差額 (売上-支払、円) */
+  series: Array<{ name: string; values: number[]; diffs: number[]; total: number; sharePct: number }>
 }
 
 const chartData = computed<ChartData>(() => {
@@ -80,10 +84,16 @@ const chartData = computed<ChartData>(() => {
 
   // 月 → person → kingaku
   const byMonth = new Map<string, Map<string, number>>()
+  // 月 → person → yosha_kingaku (差額計算用)
+  const byMonthYosha = new Map<string, Map<string, number>>()
   for (const r of props.rows) {
     if (!byMonth.has(r.month)) byMonth.set(r.month, new Map())
     const m = byMonth.get(r.month)!
     m.set(r.person_name, (m.get(r.person_name) ?? 0) + pickKingaku(r))
+
+    if (!byMonthYosha.has(r.month)) byMonthYosha.set(r.month, new Map())
+    const my = byMonthYosha.get(r.month)!
+    my.set(r.person_name, (my.get(r.person_name) ?? 0) + pickYosha(r))
   }
 
   // 月別合計
@@ -114,6 +124,10 @@ const chartData = computed<ChartData>(() => {
         const v = byMonth.get(m)?.get(name) ?? 0
         return sum > 0 ? (v / sum) * 100 : 0
       }),
+      diffs: months.map((m) => {
+        const v = byMonth.get(m)?.get(name) ?? 0
+        return v - (byMonthYosha.get(m)?.get(name) ?? 0)
+      }),
       total,
       sharePct: grandTotal > 0 ? (total / grandTotal) * 100 : 0,
     }
@@ -135,6 +149,22 @@ const chartData = computed<ChartData>(() => {
     const sum = monthSums.get(m) ?? 0
     return sum > 0 ? (otherSum / sum) * 100 : 0
   })
+  const otherDiffs = months.map((m) => {
+    const monthMap = byMonth.get(m)
+    const monthMapYosha = byMonthYosha.get(m)
+    if (!monthMap) return 0
+    let otherKingaku = 0
+    for (const [name, v] of monthMap) {
+      if (!topSet.has(name)) otherKingaku += v
+    }
+    let otherYosha = 0
+    if (monthMapYosha) {
+      for (const [name, v] of monthMapYosha) {
+        if (!topSet.has(name)) otherYosha += v
+      }
+    }
+    return otherKingaku - otherYosha
+  })
   for (const [name, v] of totals) {
     if (!topSet.has(name)) otherTotal += v
   }
@@ -142,6 +172,7 @@ const chartData = computed<ChartData>(() => {
     series.push({
       name: 'その他',
       values: otherValues,
+      diffs: otherDiffs,
       total: otherTotal,
       sharePct: grandTotal > 0 ? (otherTotal / grandTotal) * 100 : 0,
     })
@@ -153,6 +184,13 @@ const chartData = computed<ChartData>(() => {
 function monthLabel(ym: string): string {
   const m = ym.split('-')[1]
   return m ? `${parseInt(m, 10)}月` : ym
+}
+
+function fmtMan(yen: number): string {
+  const man = Math.round(yen / 10000)
+  if (man >= 10000) return `${(man / 10000).toFixed(1)}億`
+  if (man >= 1000) return `${(man / 1000).toFixed(1)}千万`
+  return `${man.toLocaleString('ja-JP')}万`
 }
 
 const option = computed(() => {
@@ -172,10 +210,12 @@ const option = computed(() => {
         if (!arr.length) return ''
         const month = d.months[arr[0].dataIndex]
         const sorted = [...arr].sort((a, b) => b.value - a.value).slice(0, 10)
-        const lines = sorted.map(
-          (p) =>
-            `<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:4px"></span>${p.seriesName}: <strong>${p.value.toFixed(1)}%</strong>`,
-        )
+        const lines = sorted.map((p) => {
+          const s = d.series.find((ss) => ss.name === p.seriesName)
+          const diff = s?.diffs[p.dataIndex]
+          const diffPart = diff == null ? '' : ` (差額 ${fmtMan(diff)}円)`
+          return `<span style="display:inline-block;width:10px;height:10px;background:${p.color};margin-right:4px"></span>${p.seriesName}: <strong>${p.value.toFixed(1)}%</strong>${diffPart}`
+        })
         return `<strong>${month}</strong><br/>${lines.join('<br/>')}`
       },
     },
