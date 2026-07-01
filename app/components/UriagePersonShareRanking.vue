@@ -29,9 +29,14 @@ const props = withDefaults(
     limit?: number
     /** 表のタイトルに含める期間ラベル (例: "2026-01〜2026-06") */
     periodLabel?: string
+    /** 現在ドリルダウン中の担当者名 (行のハイライト用)。 */
+    selectedPerson?: string | null
   }>(),
-  { limit: 30, periodLabel: '' },
+  { limit: 30, periodLabel: '', selectedPerson: null },
 )
+
+/** 行クリックで担当者ドリルダウンを起動 (親側で得意先/傭車先内訳を表示する)。 */
+const emit = defineEmits<{ select: [personName: string] }>()
 
 /** 横横除外フィルタ (v-model:exclude-yokoyoko で親と双方向 binding) */
 const excludeYokoyoko = defineModel<boolean>('excludeYokoyoko', { default: false })
@@ -108,43 +113,48 @@ function fmtMan(yen: number): string {
     <div v-if="ranking.length === 0" class="text-center py-8 text-gray-500 text-sm">
       (データなし — 期間を変えるか、<NuxtLink to="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</NuxtLink> で再計算してください)
     </div>
-    <div v-else class="overflow-x-auto">
-      <table class="text-sm border-collapse w-full">
-        <thead class="bg-gray-100">
-          <tr>
-            <th class="text-right px-3 py-2 w-16">順位</th>
-            <th class="text-left px-3 py-2">担当者</th>
-            <th class="text-right px-3 py-2 w-32">売上</th>
-            <th class="text-right px-3 py-2 w-24">件数</th>
-            <th class="text-right px-3 py-2 w-24">構成比 %</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="row in ranking"
-            :key="row.person_name"
-            class="border-t hover:bg-gray-50"
-          >
-            <td class="px-3 py-1 text-right font-mono">{{ row.rank }}</td>
-            <td class="px-3 py-1">{{ row.person_name }}</td>
-            <td class="px-3 py-1 text-right font-mono" :title="`${fmtYen(row.total)} 円`">
-              {{ fmtMan(row.total) }}
-            </td>
-            <td class="px-3 py-1 text-right font-mono">{{ row.kensuu.toLocaleString('ja-JP') }}</td>
-            <td class="px-3 py-1 text-right font-mono">{{ row.share.toFixed(1) }}</td>
-          </tr>
-        </tbody>
-        <tfoot class="border-t-2 border-gray-300 bg-gray-50">
-          <tr>
-            <td class="px-3 py-2 text-right font-semibold" colspan="2">上位 {{ ranking.length }} 名 合計</td>
-            <td class="px-3 py-2 text-right font-mono font-semibold" :title="`${fmtYen(grandTotal)} 円`">
-              {{ fmtMan(grandTotal) }}
-            </td>
-            <td class="px-3 py-2"></td>
-            <td class="px-3 py-2 text-right font-mono font-semibold">100.0</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+    <template v-else>
+      <p class="text-xs text-gray-500 mb-1 no-print">行をクリックすると得意先・傭車先の内訳を表示します</p>
+      <div class="overflow-x-auto">
+        <table class="text-sm border-collapse w-full">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="text-right px-3 py-2 w-16">順位</th>
+              <th class="text-left px-3 py-2">担当者</th>
+              <th class="text-right px-3 py-2 w-32">売上</th>
+              <th class="text-right px-3 py-2 w-24">件数</th>
+              <th class="text-right px-3 py-2 w-24">構成比 %</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in ranking"
+              :key="row.person_name"
+              class="border-t cursor-pointer hover:bg-blue-50"
+              :class="{ 'bg-blue-100': row.person_name === selectedPerson }"
+              @click="emit('select', row.person_name)"
+            >
+              <td class="px-3 py-1 text-right font-mono">{{ row.rank }}</td>
+              <td class="px-3 py-1">{{ row.person_name }}</td>
+              <td class="px-3 py-1 text-right font-mono" :title="`${fmtYen(row.total)} 円`">
+                {{ fmtMan(row.total) }}
+              </td>
+              <td class="px-3 py-1 text-right font-mono">{{ row.kensuu.toLocaleString('ja-JP') }}</td>
+              <td class="px-3 py-1 text-right font-mono">{{ row.share.toFixed(1) }}</td>
+            </tr>
+          </tbody>
+          <tfoot class="border-t-2 border-gray-300 bg-gray-50">
+            <tr>
+              <td class="px-3 py-2 text-right font-semibold" colspan="2">上位 {{ ranking.length }} 名 合計</td>
+              <td class="px-3 py-2 text-right font-mono font-semibold" :title="`${fmtYen(grandTotal)} 円`">
+                {{ fmtMan(grandTotal) }}
+              </td>
+              <td class="px-3 py-2"></td>
+              <td class="px-3 py-2 text-right font-mono font-semibold">100.0</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </template>
   </div>
 </template>
