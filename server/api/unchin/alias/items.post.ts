@@ -5,17 +5,24 @@
  * 「この品名Cとこの品名Cは同一」をユーザーが手動登録する機能 (#57 確定事項、表示名
  * 一致による自動マージはしない)。`kind: 'exception'` を指定すると、似ているが
  * 意図的に同一視しない品名コードの組を備忘として記録できる (#57 follow-up)。
+ *
+ * **得意先・傭車先スコープ必須** (#92 follow-up): 同じ品名コードでも得意先・傭車先が
+ * 違えば単価等の意味が異なりうるため、`partner_type`/`partner_code` を必須にし、
+ * 登録した得意先・傭車先だけにグルーピングが効くようにする。
+ *
  * 登録者は `versions.post.ts` と同じく `logi_auth_token` cookie の JWT から
  * email を取り出して記録する。
  */
 import { decodeJwtPayloadFromToken } from '@ippoan/auth-client/server'
-import type { UnchinItemAliasGroup } from '~~/server/utils/unchin'
+import type { PartnerType, UnchinItemAliasGroup } from '~~/server/utils/unchin'
 
 interface CreateAliasGroupBody {
   label?: string
   item_codes?: string[]
   kind?: string
   note?: string
+  partner_type?: string
+  partner_code?: string
 }
 
 export default defineEventHandler(async (event) => {
@@ -26,10 +33,18 @@ export default defineEventHandler(async (event) => {
     : []
   const kind: UnchinItemAliasGroup['kind'] = body?.kind === 'exception' ? 'exception' : 'merge'
   const note = (body?.note ?? '').trim()
+  const partnerType: PartnerType = body?.partner_type === 'subcontractor' ? 'subcontractor' : 'customer'
+  const partnerCode = (body?.partner_code ?? '').trim()
   if (!label || itemCodes.length < 2) {
     throw createError({
       statusCode: 400,
       statusMessage: 'label と item_codes (2件以上) は必須',
+    })
+  }
+  if (!partnerCode) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'partner_code は必須 (品名グルーピングは得意先・傭車先ごとに登録する)',
     })
   }
 
@@ -52,6 +67,8 @@ export default defineEventHandler(async (event) => {
     note,
     registered_by: registeredBy,
     registered_at: new Date().toISOString(),
+    partner_type: partnerType,
+    partner_code: partnerCode,
   }
   const next = [entry, ...groups]
   await saveItemAliasGroups(bucket, next)

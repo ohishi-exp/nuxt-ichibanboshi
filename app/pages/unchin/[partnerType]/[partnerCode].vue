@@ -140,6 +140,8 @@ async function createGroupFromSelection() {
         item_codes: itemCodes,
         kind: groupKind.value,
         note: groupNote.value.trim(),
+        partner_type: partnerType.value,
+        partner_code: partnerCode.value,
       },
     })
     groupMsg.value = groupKind.value === 'exception' ? '✅ 例外として記録しました' : '✅ グルーピングを登録しました'
@@ -469,6 +471,10 @@ function periodTitle(minDate: string | undefined, maxDate: string | undefined): 
           class="fixed inset-x-0 bottom-0 z-40 bg-white border-t shadow-[0_-2px_8px_rgba(0,0,0,0.1)] no-print"
         >
           <div class="max-w-5xl mx-auto px-4 py-3 flex items-end gap-3 flex-wrap">
+            <p class="w-full text-xs text-gray-400">
+              このグルーピングは「{{ partnerName || partnerCode }}」限定で登録されます
+              (他の得意先・傭車先には影響しません)
+            </p>
             <div class="flex gap-3 text-sm">
               <label class="flex items-center gap-1 cursor-pointer">
                 <input v-model="groupKind" type="radio" value="merge">

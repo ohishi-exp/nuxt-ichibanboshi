@@ -58,6 +58,11 @@ const GENERIC_ITEM_CODES = new Set(['0000', '0002'])
  * 品名コードの手動エイリアスグループ。「この品名Cとこの品名Cは同一」をユーザーが
  * 手動登録する（表示名一致による自動マージはしない。#57 で確定）。
  *
+ * **得意先・傭車先ごとにスコープされる** (#92 follow-up で確定): 同じ品名コードでも
+ * 得意先・傭車先が違えば意味 (単価等) が異なりうるため、グルーピングは
+ * `(partner_type, partner_code)` に紐づけて登録する。他の得意先・傭車先には
+ * 影響しない。
+ *
  * `kind`:
  * - `'merge'` (default): まとめて表示する通常のグルーピング
  * - `'exception'`: 似ているが意図的に同一視しない品名コードの組を記録する
@@ -71,6 +76,9 @@ export interface UnchinItemAliasGroup {
   note: string
   registered_by: string
   registered_at: string
+  partner_type: PartnerType
+  /** グルーピング対象の得意先・傭車先コード (`得意先C-得意先H` 等)。 */
+  partner_code: string
 }
 
 export function unchinItemAliasKey(): string {
@@ -95,15 +103,17 @@ export async function saveItemAliasGroups(bucket: UnchinR2BucketLike, groups: Un
 }
 
 /**
- * `item_code -> 所属グループ` の逆引き map を組み立てる。
+ * `${partner_type}:${partner_code}:${item_code} -> 所属グループ` の逆引き map を組み立てる。
  * `kind: 'exception'` (同一視しない、として記録されたもの) はまとめ処理の対象外なので除外する。
+ * キーに `partner_type`+`partner_code` を含めることで、グルーピングが登録元の
+ * 得意先・傭車先だけに効く (他の得意先・傭車先には波及しない、#92 follow-up 確定)。
  */
 export function buildItemAliasLookup(groups: UnchinItemAliasGroup[]): Map<string, UnchinItemAliasGroup> {
   const map = new Map<string, UnchinItemAliasGroup>()
   for (const group of groups) {
     if (group.kind === 'exception') continue
     for (const code of group.item_codes) {
-      map.set(code, group)
+      map.set(`${group.partner_type}:${group.partner_code}:${code}`, group)
     }
   }
   return map
@@ -116,16 +126,25 @@ export function buildItemAliasLookup(groups: UnchinItemAliasGroup[]): Map<string
  *
  * `itemAliases` を渡すと、手動登録された品名エイリアスグループ単位でまとめる
  * （表示名一致による自動マージはしない。グルーピングは必ずユーザー登録経由）。
+ * `partnerType` はエイリアスの得意先・傭車先スコープ照合に使う (#92 follow-up:
+ * 同じ品名コードでも得意先・傭車先が違えば別扱いにするため、`row.partner_code`
+ * と合わせてキーを組む)。
  *
  * 戻り値は運賃 (`fare`) 降順（= 運賃順表示）。
  */
 export function groupUnchinRows(
   rows: UnchinCandidateRow[],
+  partnerType: PartnerType,
   itemAliases?: Map<string, UnchinItemAliasGroup>,
 ): UnchinGroup[] {
   const map = new Map<string, UnchinGroup>()
   for (const row of rows) {
-    const alias = itemAliases?.get(row.item_code)
+    // 完全一致 (exact partner_code) を優先し、無ければ 得意先C (H無視) の
+    // 粗いスコープにフォールバックする — 「得意先コードでまとめる」表示中に
+    // 登録したグルーピングが、その配下の全 H に効くようにするため。
+    const alias =
+      itemAliases?.get(`${partnerType}:${row.partner_code}:${row.item_code}`) ??
+      itemAliases?.get(`${partnerType}:${partnerBaseCode(row.partner_code)}:${row.item_code}`)
     const effectiveItemCode = alias ? `alias:${alias.group_id}` : row.item_code
     const effectiveItemName = alias ? alias.label : row.item_name
     // alias でまとめた場合は積地・卸地違いを許容してまとめる (ユーザーが明示同一視した品名のため)
