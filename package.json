@@ -21,6 +21,8 @@
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.13.0",
     "@types/node": "^25.5.2",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^2.2.0",
     "wrangler": "^4.0.0"
   }
 }
