@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@holiday-jp/holiday_jp": "^2.5.1",
-    "@ippoan/auth-client": "^0.2.78",
+    "@ippoan/auth-client": "^0.2.105",
     "echarts": "^5.6.0",
     "nuxt": "^3.17.0",
     "vue": "^3.5.0",
@@ -21,6 +21,8 @@
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.13.0",
     "@types/node": "^25.5.2",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^2.2.0",
     "wrangler": "^4.0.0"
   }
 }
