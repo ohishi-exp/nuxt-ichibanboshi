@@ -1,3 +1,3 @@
 export default defineEventHandler(async (event) => {
-  return salesApiFetch(event, '/api/sales/departments')
+  return ichibanWorkerFetch(event, '/api/sales/departments')
 })

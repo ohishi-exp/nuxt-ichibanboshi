@@ -29,6 +29,12 @@ binding = "CF_ACCESS_CLIENT_SECRET"
 store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
 secret_name = "CF_ACCESS_CLIENT_SECRET"
 
+# 一番星 Worker (Service Binding 専用・認可なし)。/api/employees と /api/sales/departments だけ
+# ここから取る (Refs ohishi-exp/rust-ichibanboshi#322)。他の口と cron は従来どおりオンプレ。
+[[services]]
+binding = "ICHIBAN_DB"
+service = "ichibanboshi-ichiban"
+
 # 担当者別売上 raw NDJSON.gz の R2 backup (rust-ichiban Phase 2 PR-D 連動、
 # Refs ohishi-exp/rust-ichibanboshi#37)。`uriage/{month}/eigyosho-{id}.ndjson.gz` 規約で
 # rust の disk 配置 (`/opt/ichibanboshi/raw/{month}/eigyosho-{id}.ndjson.gz`) と 1:1。
