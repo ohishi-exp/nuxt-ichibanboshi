@@ -56,6 +56,19 @@ export async function salesApiFetch(event: H3Event, path: string) {
   return res.json()
 }
 
+/**
+ * 一番星 Worker (Service Binding ICHIBAN_DB) から JSON を取る。対象は Worker にある口だけ
+ * (/api/employees・/api/sales/departments)。他はオンプレの salesApiFetch のまま。Refs ohishi-exp/rust-ichibanboshi#322
+ */
+export async function ichibanWorkerFetch(event: H3Event, path: string) {
+  const binding = (event.context.cloudflare as { env?: { ICHIBAN_DB?: { fetch(r: Request): Promise<Response> } } } | undefined)?.env?.ICHIBAN_DB
+  if (!binding || typeof binding.fetch !== 'function') throw createError({ statusCode: 503, statusMessage: 'ICHIBAN_DB service binding is not configured' })
+  const qs = new URLSearchParams(getQuery(event) as Record<string, string>).toString()
+  const res = await binding.fetch(new Request(`https://ichibanboshi-ichiban${path}${qs ? `?${qs}` : ''}`, { method: 'GET', headers: { Accept: 'application/json' } }))
+  if (!res.ok) throw createError({ statusCode: res.status, statusMessage: res.statusText })
+  return res.json()
+}
+
 /// rust-ichiban に POST する。query を `path` に直接含めるか、`searchParams` に分けて渡す。
 /// `body` 不要 (rust 側 endpoint が body を見ない場合) なら省略。
 export async function salesApiPost(
