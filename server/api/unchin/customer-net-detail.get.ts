@@ -7,5 +7,5 @@
  * Refs ohishi-exp/rust-ichibanboshi#68)。
  */
 export default defineEventHandler(async (event) => {
-  return salesApiFetch(event, '/api/unchin/customer-net-detail')
+  return ichibanWorkerFetch(event, '/api/unchin/customer-net-detail')
 })

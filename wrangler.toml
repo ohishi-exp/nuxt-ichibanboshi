@@ -29,8 +29,8 @@ binding = "CF_ACCESS_CLIENT_SECRET"
 store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
 secret_name = "CF_ACCESS_CLIENT_SECRET"
 
-# 一番星 Worker (Service Binding 専用・認可なし)。/api/employees と /api/sales/departments だけ
-# ここから取る (Refs ohishi-exp/rust-ichibanboshi#322)。他の口と cron は従来どおりオンプレ。
+# 一番星 Worker (Service Binding 専用・認可なし)。一番星の 15 本 (employees・departments・sales 9・unchin 4)
+# をここから取る (Refs ohishi-exp/rust-ichibanboshi#322)。他の口と cron は従来どおりオンプレ。
 [[services]]
 binding = "ICHIBAN_DB"
 service = "ichibanboshi-ichiban"

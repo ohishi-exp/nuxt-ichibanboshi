@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const partnerType = query.partner_type === 'subcontractor' ? 'subcontractor' : 'customer'
 
-  const res = (await salesApiFetch(event, '/api/unchin/candidates')) as {
+  const res = (await ichibanWorkerFetch(event, '/api/unchin/candidates')) as {
     source_table: string
     data: UnchinCandidateRow[]
   }

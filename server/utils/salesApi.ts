@@ -58,7 +58,7 @@ export async function salesApiFetch(event: H3Event, path: string) {
 
 /**
  * 一番星 Worker (Service Binding ICHIBAN_DB) から JSON を取る。対象は Worker にある口だけ
- * (/api/employees・/api/sales/departments)。他はオンプレの salesApiFetch のまま。Refs ohishi-exp/rust-ichibanboshi#322
+ * (一番星の 15 本: employees・departments・sales 9・unchin 4)。他はオンプレの salesApiFetch のまま。Refs ohishi-exp/rust-ichibanboshi#322
  */
 export async function ichibanWorkerFetch(event: H3Event, path: string) {
   const binding = (event.context.cloudflare as { env?: { ICHIBAN_DB?: { fetch(r: Request): Promise<Response> } } } | undefined)?.env?.ICHIBAN_DB
