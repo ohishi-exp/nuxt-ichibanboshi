@@ -7,5 +7,5 @@
  * 食い潰して他が表示されなくなる問題があったため、SQL 側集計に切り替えた)。
  */
 export default defineEventHandler(async (event) => {
-  return salesApiFetch(event, '/api/unchin/summary')
+  return ichibanWorkerFetch(event, '/api/unchin/summary')
 })

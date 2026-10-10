@@ -8,5 +8,5 @@
  * user 2026-07-01「傭車先じゃなくて得意先にグラフ直して」)。
  */
 export default defineEventHandler(async (event) => {
-  return salesApiFetch(event, '/api/unchin/customer-net')
+  return ichibanWorkerFetch(event, '/api/unchin/customer-net')
 })

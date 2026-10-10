@@ -29,7 +29,7 @@ ECharts で売上を可視化。backend (`rust-ichiban`) を `server/api/sales/`
 
 - nuxt.config: `ssr: false` (SPA)、`nitro.preset = cloudflare_module`、modules `@nuxtjs/tailwindcss`、`transpile: ['echarts','vue-echarts','@ippoan/auth-client',...]`。
 - wrangler.toml: top-level=prod (`nuxt-ichibanboshi`, ichibanboshi.ippoan.org) / `[env.staging]`=staging。
-- vars: `NUXT_SALES_API_BASE` (rust-ichiban)、`NUXT_PUBLIC_ALC_API_BASE`、`NUXT_PUBLIC_AUTH_WORKER_URL`、`NUXT_CF_ACCESS_CLIENT_ID`。secret `NUXT_CF_ACCESS_CLIENT_SECRET` は `wrangler secret`。
+- vars: `NUXT_SALES_API_BASE` (rust-ichiban)、`NUXT_PUBLIC_ALC_API_BASE`、`NUXT_PUBLIC_AUTH_WORKER_URL`、`NUXT_CF_ACCESS_CLIENT_ID`。secret `NUXT_CF_ACCESS_CLIENT_SECRET` は `wrangler secret`。一番星 Worker (Service Binding `ICHIBAN_DB`、`ichibanWorkerFetch`) は一番星の 15 本 (employees・departments・sales 9・unchin 4) を取る。他の口と cron はオンプレ (`salesApiFetch`)。
 
 ## gotcha (wrangler.toml 由来)
 
