@@ -29,25 +29,26 @@ binding = "CF_ACCESS_CLIENT_SECRET"
 store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
 secret_name = "CF_ACCESS_CLIENT_SECRET"
 
+# 売上 Worker (Service Binding 専用・公開の入口なし)。server/api/uriage の全口をここへ向ける。
+# 書き込み系 (recalc・verify・admin) は Secrets Store の URIAGE_WRITE_TOKEN を
+# X-Uriage-Write-Token に付ける (Refs ohishi-exp/rust-ichibanboshi#322)。
+[[services]]
+binding = "URIAGE"
+service = "ichibanboshi-uriage"
+
+[[secrets_store_secrets]]
+binding = "URIAGE_WRITE_TOKEN"
+store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
+secret_name = "URIAGE_WRITE_TOKEN"
+
 # 一番星 Worker (Service Binding 専用・認可なし)。一番星の 15 本 (employees・departments・sales 9・unchin 4)
 # をここから取る (Refs ohishi-exp/rust-ichibanboshi#322)。他の口と cron は従来どおりオンプレ。
 [[services]]
 binding = "ICHIBAN_DB"
 service = "ichibanboshi-ichiban"
 
-# 担当者別売上 raw NDJSON.gz の R2 backup (rust-ichiban Phase 2 PR-D 連動、
-# Refs ohishi-exp/rust-ichibanboshi#37)。`uriage/{month}/eigyosho-{id}.ndjson.gz` 規約で
-# rust の disk 配置 (`/opt/ichibanboshi/raw/{month}/eigyosho-{id}.ndjson.gz`) と 1:1。
-# bucket は ohishi-data 復旧用 warm backup 兼、後段 BigQuery / DuckDB 解析の入口。
+# 運賃リスト (unchin/ prefix) の保存先 (server/utils/unchin.ts の getUnchinR2Bucket)。
+# 担当者別売上 raw の R2 (uriage/ prefix) は売上 Worker が recalc のたびに直接 put する。
 [[r2_buckets]]
 binding = "URIAGE_R2"
 bucket_name = "ichibanboshi-uriage"
-
-# rust-ichiban の `/api/uriage/r2/pending` を polling し、fingerprint 変化があった
-# raw NDJSON.gz を R2 (URIAGE_R2) に upload + ack する scheduled task。
-# nuxt.config の nitro.scheduledTasks と同式 (両方必須)。
-# `0 10 * * 1-6` = 月〜土 10:00 UTC = 月〜土 19:00 JST (1 日 1 回、業務時間外の
-# safety net)。再計算直後は admin page の「再計算」ボタンが recalc → R2 sync を
-# 自動 chain するため通常は cron を待つ必要なし。
-[triggers]
-crons = ["0 10 * * 1-6"]
