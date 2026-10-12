@@ -22,18 +22,18 @@ ECharts で売上を可視化。backend (`rust-ichiban`) を `server/api/sales/`
 | **components (chart)** | `app/components/{Daily,Monthly,Department,Yoy}SalesChart.vue` `Customer{SalesChart,BarRace,BumpChart,StackedArea,ThemeRiver,YoyRanking}.vue` | ECharts 各種売上チャート |
 | **composables** | `app/composables/{useAuth,useSalesData,useChartYMaxLock,useYoyDisplayMode}.ts` | 認証 / 売上データ取得 / Y軸固定 / 前年比表示モード |
 | **server/api (sales)** | `server/api/sales/{daily,monthly,yoy,by-customer,by-department,customer-detail,customer-trend,customer-yoy,customer-yoy-by-dept,departments}.get.ts` | backend への売上集計プロキシ |
-| **server (auth)** | `server/middleware/auth.ts` `server/utils/{auth-logic,salesApi}.ts` | JWT gate / 認証ロジック / sales backend クライアント (CF Access token 付与) |
+| **server (auth)** | `server/middleware/auth.ts` `server/utils/{auth-logic,salesApi}.ts` | JWT gate / 認証ロジック / Service Binding (`ICHIBAN_DB`・`URIAGE`) と CF Access 付き fetch のクライアント |
 | **utils** | `app/utils/format.ts` | 数値/通貨 整形 |
 
 ## entrypoint
 
 - nuxt.config: `ssr: false` (SPA)、`nitro.preset = cloudflare_module`、modules `@nuxtjs/tailwindcss`、`transpile: ['echarts','vue-echarts','@ippoan/auth-client',...]`。
 - wrangler.toml: top-level=prod (`nuxt-ichibanboshi`, ichibanboshi.ippoan.org) / `[env.staging]`=staging。
-- vars: `NUXT_SALES_API_BASE` (rust-ichiban)、`NUXT_PUBLIC_ALC_API_BASE`、`NUXT_PUBLIC_AUTH_WORKER_URL`、`NUXT_CF_ACCESS_CLIENT_ID`。secret `NUXT_CF_ACCESS_CLIENT_SECRET` は `wrangler secret`。一番星 Worker (Service Binding `ICHIBAN_DB`、`ichibanWorkerFetch`) は一番星の 15 本 (employees・departments・sales 9・unchin 4) を取る。他の口と cron はオンプレ (`salesApiFetch`)。
+- vars: `NUXT_SALES_API_BASE` (rust-ichiban)、`NUXT_PUBLIC_ALC_API_BASE`、`NUXT_PUBLIC_AUTH_WORKER_URL`、`NUXT_CF_ACCESS_CLIENT_ID`。secret `NUXT_CF_ACCESS_CLIENT_SECRET` は `wrangler secret`。一番星 Worker (Service Binding `ICHIBAN_DB`、`ichibanWorkerFetch`) は一番星の 15 本 (employees・departments・sales 9・unchin 4) を取る。売上 Worker (Service Binding `URIAGE`、`uriageWorker`) は `server/api/uriage/*` 全部を担い、書き込み系 (recalc・verify・admin) だけ Secrets Store `URIAGE_WRITE_TOKEN` を `X-Uriage-Write-Token` に付ける。R2 `URIAGE_R2` は運賃リスト (unchin/) 用で、売上 raw の R2 は売上 Worker が recalc のたびに put する (R2 同期の task・cron は撤去済)。`salesApiFetch`/`salesApiPost` は切り戻し用に残すが呼び元は 0。
 
 ## gotcha (wrangler.toml 由来)
 
-- **sales backend は CF Access で保護**。`server/utils/salesApi.ts` が `CF-Access-Client-Id/Secret` を付与して叩く。prod (`44252f05...access`) と staging (`2a71ff20...access`) は **独立した Service Token**。両方を CF Access Application allowlist に登録済。
+- **オンプレ sales backend (切り戻し用) は CF Access で保護**。`server/utils/salesApi.ts` の `salesApiFetch`/`salesApiPost` が `CF-Access-Client-Id/Secret` を付与して叩く。prod (`44252f05...access`) と staging (`2a71ff20...access`) は **独立した Service Token**。両方を CF Access Application allowlist に登録済。
 - **tenant gate は auth-worker 側に集約済** (`APP_TENANT_ACL` + `bypass_emails`)。staging では `NUXT_ALLOWED_TENANT_ID` secret は削除済 — フロント側に tenant 制御を足し直さない。
 - staging の `NUXT_PUBLIC_ALC_API_BASE` は rust-alc-api-staging Cloud Run を直に指す (prod は alc-api.ippoan.org)。
 - CLAUDE.md 無し (運用ルールは wrangler.toml のコメントが主)。

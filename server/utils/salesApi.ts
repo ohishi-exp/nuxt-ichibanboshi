@@ -56,17 +56,74 @@ export async function salesApiFetch(event: H3Event, path: string) {
   return res.json()
 }
 
+type ServiceBinding = { fetch(r: Request): Promise<Response> }
+
+/**
+ * Service Binding (wrangler.toml の `[[services]]`) 越しに Worker を叩いて JSON を返す。
+ * `workerName` は Request URL の host にだけ使う (Service Binding は host を見ない)。
+ * 失敗は salesApiPost と同じく本文の先頭 500 字を `data` に付ける。Refs ohishi-exp/rust-ichibanboshi#322
+ */
+async function serviceBindingFetch(
+  event: H3Event,
+  bindingName: string,
+  workerName: string,
+  path: string,
+  opts?: { method?: string; headers?: Record<string, string>; body?: unknown },
+): Promise<unknown> {
+  const env = (event.context.cloudflare as { env?: Record<string, unknown> } | undefined)?.env
+  const binding = env?.[bindingName] as ServiceBinding | undefined
+  if (!binding || typeof binding.fetch !== 'function') {
+    throw createError({ statusCode: 503, statusMessage: `${bindingName} service binding is not configured` })
+  }
+  const res = await binding.fetch(new Request(`https://${workerName}${path}`, {
+    method: opts?.method ?? 'GET',
+    headers: {
+      Accept: 'application/json',
+      ...(opts?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...opts?.headers,
+    },
+    body: opts?.body ? JSON.stringify(opts.body) : undefined,
+  }))
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw createError({ statusCode: res.status, statusMessage: res.statusText, data: text.slice(0, 500) })
+  }
+  return res.json()
+}
+
+function withQuery(event: H3Event, path: string): string {
+  const qs = new URLSearchParams(getQuery(event) as Record<string, string>).toString()
+  return qs ? `${path}?${qs}` : path
+}
+
 /**
  * 一番星 Worker (Service Binding ICHIBAN_DB) から JSON を取る。対象は Worker にある口だけ
- * (一番星の 15 本: employees・departments・sales 9・unchin 4)。他はオンプレの salesApiFetch のまま。Refs ohishi-exp/rust-ichibanboshi#322
+ * (一番星の 15 本: employees・departments・sales 9・unchin 4)。Refs ohishi-exp/rust-ichibanboshi#322
  */
 export async function ichibanWorkerFetch(event: H3Event, path: string) {
-  const binding = (event.context.cloudflare as { env?: { ICHIBAN_DB?: { fetch(r: Request): Promise<Response> } } } | undefined)?.env?.ICHIBAN_DB
-  if (!binding || typeof binding.fetch !== 'function') throw createError({ statusCode: 503, statusMessage: 'ICHIBAN_DB service binding is not configured' })
-  const qs = new URLSearchParams(getQuery(event) as Record<string, string>).toString()
-  const res = await binding.fetch(new Request(`https://ichibanboshi-ichiban${path}${qs ? `?${qs}` : ''}`, { method: 'GET', headers: { Accept: 'application/json' } }))
-  if (!res.ok) throw createError({ statusCode: res.status, statusMessage: res.statusText })
-  return res.json()
+  return serviceBindingFetch(event, 'ICHIBAN_DB', 'ichibanboshi-ichiban', withQuery(event, path))
+}
+
+/**
+ * 売上 Worker (Service Binding URIAGE) を叩く。query は素通し。
+ * `write: true` のときだけ Secrets Store `URIAGE_WRITE_TOKEN` を `X-Uriage-Write-Token` に付ける。
+ */
+export async function uriageWorker(
+  event: H3Event,
+  path: string,
+  opts?: { method?: 'GET' | 'POST'; write?: boolean },
+) {
+  const headers: Record<string, string> = {}
+  if (opts?.write) {
+    const env = (event.context.cloudflare as { env?: { URIAGE_WRITE_TOKEN?: unknown } } | undefined)?.env
+    const token = await resolveSecret(env?.URIAGE_WRITE_TOKEN)
+    if (!token) throw createError({ statusCode: 503, statusMessage: 'URIAGE_WRITE_TOKEN is not configured' })
+    headers['X-Uriage-Write-Token'] = token
+  }
+  return serviceBindingFetch(event, 'URIAGE', 'ichibanboshi-uriage', withQuery(event, path), {
+    method: opts?.method ?? 'GET',
+    headers,
+  })
 }
 
 /// rust-ichiban に POST する。query を `path` に直接含めるか、`searchParams` に分けて渡す。
@@ -104,44 +161,4 @@ export async function salesApiPost(
     })
   }
   return res.json()
-}
-
-/// 任意 path を GET し ArrayBuffer で返す (rust-ichiban の `/api/uriage/raw/:m/:e` 用)。
-/// event 無し版 (cron 経由) も可。
-export async function salesApiGetBytes(
-  pathOrEvent: H3Event | string,
-  pathIfEvent?: string,
-): Promise<ArrayBuffer> {
-  const config = useRuntimeConfig()
-  const event = typeof pathOrEvent === 'string' ? undefined : pathOrEvent
-  const path = typeof pathOrEvent === 'string' ? pathOrEvent : pathIfEvent!
-  const url = `${config.salesApiBase}${path}`
-  const cfHeaders = await getCfAccessHeaders(event)
-  const res = await fetch(url, { headers: cfHeaders })
-  if (!res.ok) {
-    throw createError({
-      statusCode: res.status,
-      statusMessage: `rust-ichiban GET ${path} failed`,
-    })
-  }
-  return res.arrayBuffer()
-}
-
-/// 任意 path を POST (body 無し、認証 cron 用)。event 無し版あり。
-export async function salesApiPostNoBody(
-  pathOrEvent: H3Event | string,
-  pathIfEvent?: string,
-): Promise<void> {
-  const config = useRuntimeConfig()
-  const event = typeof pathOrEvent === 'string' ? undefined : pathOrEvent
-  const path = typeof pathOrEvent === 'string' ? pathOrEvent : pathIfEvent!
-  const url = `${config.salesApiBase}${path}`
-  const cfHeaders = await getCfAccessHeaders(event)
-  const res = await fetch(url, { method: 'POST', headers: cfHeaders })
-  if (!res.ok) {
-    throw createError({
-      statusCode: res.status,
-      statusMessage: `rust-ichiban POST ${path} failed`,
-    })
-  }
 }

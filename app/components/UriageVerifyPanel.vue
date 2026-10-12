@@ -72,12 +72,11 @@ const currentRunId = ref(0)
 const historyLoading = ref(false)
 const historyMsg = ref('')
 
-// ── R2 同期 (verify-first) state ──
-const r2SyncLoading = ref(false)
-const r2SyncMsg = ref('')
-const r2SyncResult = ref<R2SyncResult | null>(null)
-/** R2 同期 orchestrator の現在 phase (UI 進捗バー用) */
-const r2SyncPhase = ref<'idle' | 'fetch-pending' | 'verify' | 'sync' | 'done'>('idle')
+// ── 一括 verify / recalc state ──
+const jobLoading = ref(false)
+const jobMsg = ref('')
+/** 一括 verify / recalc の現在 phase (UI 進捗バー用) */
+const jobPhase = ref<'idle' | 'fetch-pending' | 'verify' | 'done'>('idle')
 
 // ── 状態サマリ state ──
 const summaryLoading = ref(false)
@@ -125,21 +124,6 @@ interface R2PendingItem {
   expected_count: number
   ready: boolean
   blocker: 'ng_present' | 'unverified' | null
-}
-
-interface R2SyncResult {
-  attempted: number
-  uploaded: number
-  acked: number
-  failures: Array<{ month: string; eigyosho_id: number; stage: string; error: string }>
-  skipped: Array<{
-    month: string
-    eigyosho_id: number
-    reason: 'unverified' | 'ng_present'
-    verified_count: number
-    verified_ng: number
-    expected_count: number
-  }>
 }
 
 interface VerifyHistoryRow {
@@ -483,139 +467,6 @@ async function loadDbHistory() {
 }
 
 /**
- * R2 同期 (verify-first):
- * 1. /api/uriage/r2/pending を取得
- * 2. ready=true の bucket は即 sync 対象、blocker=unverified は browser-side で
- *    iterate /verify、blocker=ng_present は skip
- * 3. verify 完了後 /api/uriage/r2-sync を 1 回叩いて ready bucket をまとめて sync
- *
- * CF Workers の subrequest 上限 (1 invocation = 50 限) を避けるため、verify は
- * **browser-side で 1 call = 1 worker invocation** に分散する。
- */
-async function runR2SyncVerifyFirst() {
-  if (running.value || r2SyncLoading.value) return
-  r2SyncLoading.value = true
-  r2SyncMsg.value = ''
-  r2SyncResult.value = null
-  r2SyncPhase.value = 'fetch-pending'
-  try {
-    // 1. pending list (user 2026-06-30: 「R2 同期も recalc も期間に従う」)
-    // UI の from/to から YYYY-MM を抽出して rust の r2_pending を期間 filter する。
-    // 状態サマリは全期間だが、R2 同期 / verify は UI 期間に従う設計。
-    const fromMonth = from.value.slice(0, 7)
-    const toMonth = to.value.slice(0, 7)
-    const pendingUrl =
-      fromMonth && toMonth
-        ? `/api/uriage/r2-pending?from=${fromMonth}&to=${toMonth}`
-        : '/api/uriage/r2-pending'
-    r2SyncMsg.value = `[1/3] pending list 取得中… (${fromMonth} 〜 ${toMonth})`
-    const pendingRes = await $fetch<{ count: number; items: R2PendingItem[] }>(pendingUrl)
-    const unverified = pendingRes.items.filter((i) => i.blocker === 'unverified')
-    const ngPresent = pendingRes.items.filter((i) => i.blocker === 'ng_present')
-    const readyCount = pendingRes.items.filter((i) => i.ready).length
-    if (pendingRes.count === 0) {
-      // 期間内の recalc_jobs を fetch してどんな状態か診断 (user 2026-06-30:
-      // 「1 月まで同期されてないのに対象なしはおかしい」)。pending=0 でも recalc_jobs に
-      // failed / raw_path=NULL の行があると user は「未同期」と認識する。
-      let diagnosis = ''
-      try {
-        const params = new URLSearchParams({ from: fromMonth, to: toMonth })
-        const jobs = await $fetch<RecalcJobsResponse>(
-          `/api/uriage/recalc-jobs?${params.toString()}`,
-        )
-        const synced = jobs.jobs.filter((j) => j.status === 'r2_synced').length
-        const computed = jobs.jobs.filter((j) => j.status === 'computed').length
-        const failed = jobs.jobs.filter((j) => j.status === 'failed').length
-        const total = jobs.jobs.length
-        if (total === 0) {
-          diagnosis = `期間 ${fromMonth}〜${toMonth} に recalc_jobs が 1 件もありません → /admin/recalc で再計算してください。`
-        } else {
-          diagnosis = `期間 ${fromMonth}〜${toMonth}: recalc_jobs ${total} 件 (✅同期済=${synced} / 🟡同期待ち=${computed} / ❌失敗=${failed})。`
-          if (computed > 0) {
-            diagnosis += `\n⚠ 🟡 が ${computed} 件あるのに pending=0 です。raw_path が NULL (= recalc が 0 行だったため raw 出力なし) の可能性 → /admin/recalc で再計算してください。`
-          }
-        }
-      } catch {
-        diagnosis = '(recalc-jobs の診断 fetch 失敗、サマリ参照してください)'
-      }
-      r2SyncMsg.value = `✅ R2 同期対象なし (r2_pending view が空)\n${diagnosis}`
-      r2SyncPhase.value = 'done'
-      // 状態サマリも自動 reload (どのバケットが既同期かが見える)
-      void loadStatusSummary()
-      return
-    }
-    r2SyncMsg.value =
-      `[1/3] pending: ${pendingRes.count} bucket (ready=${readyCount}, unverified=${unverified.length}, ng_present=${ngPresent.length})`
-
-    // 2. unverified bucket を verify (browser-side iterate)
-    if (unverified.length > 0) {
-      r2SyncPhase.value = 'verify'
-      r2SyncMsg.value += `\n[2/3] unverified ${unverified.length} bucket を verify 中…`
-      const nextRunId = currentRunId.value + 1
-      currentRunId.value = nextRunId
-      const verifyJobs: VerifyJob[] = []
-      for (const item of unverified) {
-        const days = expandDates(`${item.month}-01`, lastDayOf(item.month))
-        for (const day of days) {
-          for (const cal of [true, false]) {
-            verifyJobs.push({
-              key: `${day}/${item.eigyosho_id}/${cal}#sync-run${nextRunId}`,
-              runId: nextRunId,
-              date: day,
-              officeId: item.eigyosho_id,
-              cal,
-              status: 'pending',
-            })
-          }
-        }
-      }
-      jobs.value = [...jobs.value, ...verifyJobs]
-      // 既存 jobs.value 経由で worker が proxied item を mutate するように
-      const startIdx = jobs.value.length - verifyJobs.length
-      const indices: number[] = []
-      for (let i = 0; i < verifyJobs.length; i++) indices.push(startIdx + i)
-      const conc = Math.min(16, Math.max(1, Math.floor(concurrency.value) || 1))
-      async function worker() {
-        while (indices.length > 0) {
-          const idx = indices.shift()
-          if (idx === undefined) break
-          const job = jobs.value[idx]
-          if (!job) break
-          await runOne(job)
-        }
-      }
-      const workers: Promise<void>[] = []
-      for (let i = 0; i < conc; i++) workers.push(worker())
-      await Promise.all(workers)
-      r2SyncMsg.value += ` → verify 完了 (${verifyJobs.length} cells、進捗バー参照)`
-    }
-
-    // 3. ng_present は skip 警告だけ
-    if (ngPresent.length > 0) {
-      r2SyncMsg.value += `\n[2/3] NG bucket は skip (${ngPresent.length}、要 fix)`
-    }
-
-    // 4. ready bucket をまとめて sync
-    r2SyncPhase.value = 'sync'
-    r2SyncMsg.value += `\n[3/3] R2 sync 実行中…`
-    const syncRes = await $fetch<R2SyncResult>('/api/uriage/r2-sync', { method: 'POST' })
-    r2SyncResult.value = syncRes
-    r2SyncPhase.value = 'done'
-    r2SyncMsg.value += `\n[完了] uploaded=${syncRes.uploaded}/${syncRes.attempted}, acked=${syncRes.acked}, failures=${syncRes.failures.length}, skipped=${syncRes.skipped.length}`
-    // 状態サマリも reload (sync 後の状態を反映)
-    void loadStatusSummary()
-  } catch (e: unknown) {
-    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
-    const dataMsg =
-      typeof err.data === 'string' ? err.data : err.data ? JSON.stringify(err.data) : ''
-    r2SyncMsg.value = `❌ R2 同期失敗 (phase=${r2SyncPhase.value}): ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
-    r2SyncPhase.value = 'idle'
-  } finally {
-    r2SyncLoading.value = false
-  }
-}
-
-/**
  * recalc_jobs を読んで状態サマリを表示する (user 要望: 状態サマリは全期間表示・降順)。
  *
  * 引数なしで叩くと **全期間 (from/to なし)** を取得し、rust 側で
@@ -808,7 +659,7 @@ function setDefaultRange() {
   const d = today.getUTCDate()
   const dStr = String(d).padStart(2, '0')
   // user 要望 (2026-06-30): 「2026/1 から実行できるように」
-  // 検証 / R2 同期の起点を 2026-01-01 にして、to を今日まで。
+  // 検証の起点を 2026-01-01 にして、to を今日まで。
   // 月選択 input は当月をデフォルト (個別月だけ動かしたい時にすぐ切り替えられる)。
   from.value = '2026-01-01'
   to.value = `${y}-${mStr}-${dStr}`
@@ -850,18 +701,16 @@ if (!from.value || !to.value) setDefaultRange()
 /**
  * 「未検証 bucket だけ verify」ボタン用 orchestrator。
  *
- * R2 同期 (verify-first) と違い、**R2 sync 段階は実行しない**。
  * UI 期間 (from/to) の r2_pending で blocker='unverified' な bucket を集めて
  * (date, office, cal) に展開し、browser worker pool で並列 verify する。
  *
  * (user 2026-06-30: 「未実施分を検証とかできるようにuiいれて 2026/1 から実行できるように」)
  */
 async function runVerifyUnverifiedOnly() {
-  if (running.value || r2SyncLoading.value) return
-  r2SyncLoading.value = true
-  r2SyncMsg.value = ''
-  r2SyncResult.value = null
-  r2SyncPhase.value = 'fetch-pending'
+  if (running.value || jobLoading.value) return
+  jobLoading.value = true
+  jobMsg.value = ''
+  jobPhase.value = 'fetch-pending'
   try {
     const fromMonth = from.value.slice(0, 7)
     const toMonth = to.value.slice(0, 7)
@@ -869,18 +718,18 @@ async function runVerifyUnverifiedOnly() {
       fromMonth && toMonth
         ? `/api/uriage/r2-pending?from=${fromMonth}&to=${toMonth}`
         : '/api/uriage/r2-pending'
-    r2SyncMsg.value = `[1/2] pending list 取得中… (${fromMonth} 〜 ${toMonth})`
+    jobMsg.value = `[1/2] pending list 取得中… (${fromMonth} 〜 ${toMonth})`
     const pendingRes = await $fetch<{ count: number; items: R2PendingItem[] }>(pendingUrl)
     const unverified = pendingRes.items.filter((i) => i.blocker === 'unverified')
     if (unverified.length === 0) {
-      r2SyncMsg.value = `[完了] 未検証 bucket なし (期間 ${fromMonth} 〜 ${toMonth})。状態サマリ再 load します…`
-      r2SyncPhase.value = 'done'
+      jobMsg.value = `[完了] 未検証 bucket なし (期間 ${fromMonth} 〜 ${toMonth})。状態サマリ再 load します…`
+      jobPhase.value = 'done'
       void loadStatusSummary()
       return
     }
-    r2SyncMsg.value = `[1/2] 未検証 ${unverified.length} bucket 検出 → verify 開始`
+    jobMsg.value = `[1/2] 未検証 ${unverified.length} bucket 検出 → verify 開始`
 
-    r2SyncPhase.value = 'verify'
+    jobPhase.value = 'verify'
     const nextRunId = currentRunId.value + 1
     currentRunId.value = nextRunId
     const verifyJobs: VerifyJob[] = []
@@ -916,17 +765,17 @@ async function runVerifyUnverifiedOnly() {
     const workers: Promise<void>[] = []
     for (let i = 0; i < conc; i++) workers.push(worker())
     await Promise.all(workers)
-    r2SyncPhase.value = 'done'
-    r2SyncMsg.value += `\n[2/2] verify 完了 (${verifyJobs.length} cells)。状態サマリ再 load します…`
+    jobPhase.value = 'done'
+    jobMsg.value += `\n[2/2] verify 完了 (${verifyJobs.length} cells)。状態サマリ再 load します…`
     void loadStatusSummary()
   } catch (e: unknown) {
     const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
     const dataMsg =
       typeof err.data === 'string' ? err.data : err.data ? JSON.stringify(err.data) : ''
-    r2SyncMsg.value = `❌ verify 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
-    r2SyncPhase.value = 'idle'
+    jobMsg.value = `❌ verify 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
+    jobPhase.value = 'idle'
   } finally {
-    r2SyncLoading.value = false
+    jobLoading.value = false
   }
 }
 
@@ -945,15 +794,13 @@ async function runVerifyUnverifiedOnly() {
  * - status='failed' は recalc 自体が失敗しているので skip
  * - blocker フィルタはしない (= 過去 OK 行も含めて再判定する)
  *
- * R2 同期 (verify-first) と違い R2 sync 段階は実行しない。verify_jobs を
- * 更新するだけ。
+ * verify_jobs を更新するだけ。
  */
 async function runForceVerifyAllBuckets() {
-  if (running.value || r2SyncLoading.value) return
-  r2SyncLoading.value = true
-  r2SyncMsg.value = ''
-  r2SyncResult.value = null
-  r2SyncPhase.value = 'fetch-pending'
+  if (running.value || jobLoading.value) return
+  jobLoading.value = true
+  jobMsg.value = ''
+  jobPhase.value = 'fetch-pending'
   try {
     const fromMonth = from.value.slice(0, 7)
     const toMonth = to.value.slice(0, 7)
@@ -961,18 +808,18 @@ async function runForceVerifyAllBuckets() {
       fromMonth && toMonth
         ? `/api/uriage/recalc-jobs?from=${fromMonth}&to=${toMonth}`
         : '/api/uriage/recalc-jobs'
-    r2SyncMsg.value = `[1/2] recalc_jobs 取得中… (${fromMonth} 〜 ${toMonth})`
+    jobMsg.value = `[1/2] recalc_jobs 取得中… (${fromMonth} 〜 ${toMonth})`
     const res = await $fetch<RecalcJobsResponse>(url)
     const targets = res.jobs.filter((j) => j.status !== 'failed')
     if (targets.length === 0) {
-      r2SyncMsg.value = `[完了] 対象 bucket なし (期間 ${fromMonth} 〜 ${toMonth} に computed/r2_synced 行が無い)。先に /admin/recalc で再計算してください。`
-      r2SyncPhase.value = 'done'
+      jobMsg.value = `[完了] 対象 bucket なし (期間 ${fromMonth} 〜 ${toMonth} に computed/r2_synced 行が無い)。先に /admin/recalc で再計算してください。`
+      jobPhase.value = 'done'
       void loadStatusSummary()
       return
     }
-    r2SyncMsg.value = `[1/2] ${targets.length} bucket 検出 → 強制 verify 開始 (過去 OK/NG も上書き)`
+    jobMsg.value = `[1/2] ${targets.length} bucket 検出 → 強制 verify 開始 (過去 OK/NG も上書き)`
 
-    r2SyncPhase.value = 'verify'
+    jobPhase.value = 'verify'
     const nextRunId = currentRunId.value + 1
     currentRunId.value = nextRunId
     const verifyJobs: VerifyJob[] = []
@@ -1008,17 +855,17 @@ async function runForceVerifyAllBuckets() {
     const workers: Promise<void>[] = []
     for (let i = 0; i < conc; i++) workers.push(worker())
     await Promise.all(workers)
-    r2SyncPhase.value = 'done'
-    r2SyncMsg.value += `\n[2/2] 強制 verify 完了 (${verifyJobs.length} cells)。状態サマリ再 load します…`
+    jobPhase.value = 'done'
+    jobMsg.value += `\n[2/2] 強制 verify 完了 (${verifyJobs.length} cells)。状態サマリ再 load します…`
     void loadStatusSummary()
   } catch (e: unknown) {
     const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
     const dataMsg =
       typeof err.data === 'string' ? err.data : err.data ? JSON.stringify(err.data) : ''
-    r2SyncMsg.value = `❌ 強制 verify 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
-    r2SyncPhase.value = 'idle'
+    jobMsg.value = `❌ 強制 verify 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${dataMsg}`
+    jobPhase.value = 'idle'
   } finally {
-    r2SyncLoading.value = false
+    jobLoading.value = false
   }
 }
 
@@ -1046,28 +893,14 @@ function canVerifyRow(j: RecalcJobRow): boolean {
 }
 
 /**
- * R2 同期ボタンを出して良い行か。
- * - r2_synced_at が立っている (= ✅ R2 同期済) なら不要
- * - failed は対象外
- * - NG ありは r2_pending view で gate されて sync skip されるが、UI ボタンは
- *   出して動かしても問題ない (rust 側で skip 扱い)
- */
-function canSyncRow(j: RecalcJobRow): boolean {
-  if (j.status === 'failed') return false
-  if (j.status === 'r2_synced') return false
-  return true
-}
-
-/**
  * 1 行分 verify を実行 (= (j.month, j.eigyosho_id) の全 (date, cal) を verify)。
  * 完了後に状態サマリを reload。
  */
 async function runVerifyForRow(j: RecalcJobRow) {
-  if (running.value || r2SyncLoading.value) return
-  r2SyncLoading.value = true
-  r2SyncMsg.value = `🔍 ${j.month} / office=${j.eigyosho_id} verify 中…`
-  r2SyncResult.value = null
-  r2SyncPhase.value = 'verify'
+  if (running.value || jobLoading.value) return
+  jobLoading.value = true
+  jobMsg.value = `🔍 ${j.month} / office=${j.eigyosho_id} verify 中…`
+  jobPhase.value = 'verify'
   try {
     const days = expandDates(`${j.month}-01`, lastDayOf(j.month))
     const nextRunId = currentRunId.value + 1
@@ -1102,69 +935,32 @@ async function runVerifyForRow(j: RecalcJobRow) {
     const workers: Promise<void>[] = []
     for (let i = 0; i < conc; i++) workers.push(worker())
     await Promise.all(workers)
-    r2SyncPhase.value = 'done'
-    r2SyncMsg.value = `✅ ${j.month} / office=${j.eigyosho_id} verify 完了 (${verifyJobs.length} cells)。サマリ再 load…`
+    jobPhase.value = 'done'
+    jobMsg.value = `✅ ${j.month} / office=${j.eigyosho_id} verify 完了 (${verifyJobs.length} cells)。サマリ再 load…`
     void loadStatusSummary()
   } catch (e: unknown) {
     const err = e as { statusCode?: number; statusMessage?: string }
-    r2SyncMsg.value = `❌ row verify 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
-    r2SyncPhase.value = 'idle'
+    jobMsg.value = `❌ row verify 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+    jobPhase.value = 'idle'
   } finally {
-    r2SyncLoading.value = false
+    jobLoading.value = false
   }
 }
 
 /**
- * 1 行分 R2 同期を実行。UI from/to を当該 month に一時切り替え、既存 R2 同期
- * orchestrator (verify-first) を再利用する。
- *
- * NOTE: rust の `/api/uriage/r2-sync` は (month, eigyosho_id) 単位の filter を
- * 受けない (= ready 全件 sync する) ので、from/to を当該 month に切ると **同月の
- * 他 office も pending なら一緒に sync される**。これは多くの場合むしろ望ましい
- * 挙動 (= 月単位で揃って R2 へ上がる) なので明示的に許容する。
- */
-async function runR2SyncForRow(j: RecalcJobRow) {
-  if (running.value || r2SyncLoading.value) return
-  const savedFrom = from.value
-  const savedTo = to.value
-  from.value = `${j.month}-01`
-  to.value = lastDayOf(j.month)
-  try {
-    await runR2SyncVerifyFirst()
-  } finally {
-    from.value = savedFrom
-    to.value = savedTo
-  }
-}
-
-/**
- * 「🚀 2026-01〜今日 R2 一括同期」ボタン用。
- *
- * user 要望 (2026-06-30): 「2026-01 から同期できるように inline つくってね」
- *
- * UI 期間 (from/to) を一時的に `2026-01-01 〜 今日` に切り替えて
- * `runR2SyncVerifyFirst` を呼ぶ。完了後 from/to を復元する。
- *
- * 状態サマリ panel に常駐させているので、from/to を手で動かさなくても 1 クリックで
- * 「2026 年に入って以降の全 pending」を verify-first で R2 同期できる。
- */
-/**
- * 「⚡ 2026-01〜今日 一括 recalc + R2 同期」ボタン (user 2026-06-30:
+ * 「⚡ 2026-01〜今日 全期間 recalc」ボタン (user 2026-06-30:
  * 「編集可能月だけ同期すんなよ? 全部読めるんだから同期すんだよ?」)
  *
  * 標準の `/api/uriage/recalc` (no month) は CakePHP の editable_months
- * (= 通常 2 ヶ月分) しか recalc しない。1 月から全期間を recalc + sync
+ * (= 通常 2 ヶ月分) しか recalc しない。1 月から全期間を recalc
  * したい場合、月単位で `/api/uriage/recalc?month=YYYY-MM` を sequential
- * に叩く必要がある。
- *
- * 完了後に R2 同期 (verify-first) を実行して全 pending を流す。
+ * に叩く必要がある。R2 への書き出しは売上 Worker が recalc のたびに行う。
  */
-async function runRecalcAndSyncFromYear2026() {
-  if (running.value || r2SyncLoading.value) return
-  r2SyncLoading.value = true
-  r2SyncMsg.value = '⚡ 2026-01〜今日 一括 recalc を開始…'
-  r2SyncResult.value = null
-  r2SyncPhase.value = 'fetch-pending'
+async function recalcAllMonths() {
+  if (running.value || jobLoading.value) return
+  jobLoading.value = true
+  jobMsg.value = '⚡ 2026-01〜今日 一括 recalc を開始…'
+  jobPhase.value = 'fetch-pending'
   const today = new Date()
   const ty = today.getUTCFullYear()
   const tm = today.getUTCMonth() + 1
@@ -1176,42 +972,24 @@ async function runRecalcAndSyncFromYear2026() {
   try {
     for (let i = 0; i < months.length; i++) {
       const m = months[i]
-      r2SyncMsg.value = `⚡ [${i + 1}/${months.length}] recalc ${m} 実行中…`
+      jobMsg.value = `⚡ [${i + 1}/${months.length}] recalc ${m} 実行中…`
       try {
         await $fetch(`/api/uriage/recalc?month=${m}`, { method: 'POST' })
       } catch (e: unknown) {
         const err = e as { statusCode?: number; statusMessage?: string }
-        r2SyncMsg.value += `\n  ❌ ${m} recalc 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+        jobMsg.value += `\n  ❌ ${m} recalc 失敗: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
         // 続行 (= 1 月失敗でも他月は試す)
       }
     }
-    r2SyncMsg.value += `\n✅ 一括 recalc 完了 (${months.length} ヶ月)。続けて R2 同期 (verify-first)…`
-    // R2 同期は existing runR2SyncFromYear2026 を呼ぶ
-    r2SyncLoading.value = false // 一旦 false に戻して runR2SyncFromYear2026 を入れる
-    await runR2SyncFromYear2026()
+    jobMsg.value += `\n✅ 一括 recalc 完了 (${months.length} ヶ月)。状態サマリ再 load します…`
+    jobPhase.value = 'done'
+    void loadStatusSummary()
   } catch (e: unknown) {
     const err = e as { statusCode?: number; statusMessage?: string }
-    r2SyncMsg.value += `\n❌ 一括 recalc 中断: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
-    r2SyncPhase.value = 'idle'
-    r2SyncLoading.value = false
-  }
-}
-
-async function runR2SyncFromYear2026() {
-  if (running.value || r2SyncLoading.value) return
-  const today = new Date()
-  const y = today.getUTCFullYear()
-  const mStr = String(today.getUTCMonth() + 1).padStart(2, '0')
-  const dStr = String(today.getUTCDate()).padStart(2, '0')
-  const savedFrom = from.value
-  const savedTo = to.value
-  from.value = '2026-01-01'
-  to.value = `${y}-${mStr}-${dStr}`
-  try {
-    await runR2SyncVerifyFirst()
+    jobMsg.value += `\n❌ 一括 recalc 中断: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)}`
+    jobPhase.value = 'idle'
   } finally {
-    from.value = savedFrom
-    to.value = savedTo
+    jobLoading.value = false
   }
 }
 </script>
@@ -1220,7 +998,7 @@ async function runR2SyncFromYear2026() {
   <div class="space-y-4">
     <div class="bg-white rounded-lg shadow p-4 space-y-3">
       <div class="text-sm text-gray-600">
-        rust-ichiban (<code>/api/uriage/verify</code>) を単日 × 営業所 × cal の組み合わせで
+        売上 Worker (<code>/api/uriage/verify</code>) を単日 × 営業所 × cal の組み合わせで
         並列 fetch し、PHP <code>/print-json</code> と Rust <code>compute_person_sum</code>
         を 1 円単位 diff します。NG 行はクリックで詳細を展開できます。
         office_id が masters に居ない場合 (404) は skipped 扱い。
@@ -1296,14 +1074,6 @@ async function runR2SyncFromYear2026() {
           {{ historyLoading ? 'ロード中…' : '📜 DB 履歴をロード' }}
         </button>
         <button
-          :disabled="running || r2SyncLoading"
-          class="bg-purple-600 text-white px-3 py-2 rounded text-sm hover:bg-purple-700 disabled:bg-gray-400"
-          @click="runR2SyncVerifyFirst"
-          title="未検証 bucket を verify してから R2 sync (verify-first orchestrator)"
-        >
-          {{ r2SyncLoading ? `R2 同期中… (${r2SyncPhase})` : '🚀 R2 同期 (verify-first)' }}
-        </button>
-        <button
           :disabled="summaryLoading"
           class="bg-teal-600 text-white px-3 py-2 rounded text-sm hover:bg-teal-700 disabled:bg-gray-400"
           @click="loadStatusSummary(true)"
@@ -1319,12 +1089,12 @@ async function runR2SyncFromYear2026() {
       <div v-if="historyMsg" class="text-sm whitespace-pre-wrap" :class="historyMsg.startsWith('❌') ? 'text-red-700' : 'text-green-700'">
         {{ historyMsg }}
       </div>
-      <div v-if="r2SyncMsg" class="text-sm whitespace-pre-wrap text-purple-800 bg-purple-50 border border-purple-200 rounded px-3 py-2 space-y-2">
-        <div>🚀 {{ r2SyncMsg }}</div>
+      <div v-if="jobMsg" class="text-sm whitespace-pre-wrap text-purple-800 bg-purple-50 border border-purple-200 rounded px-3 py-2 space-y-2">
+        <div>🚀 {{ jobMsg }}</div>
         <!-- 行単位 verify / 一括 verify 時の inline 進捗 (user 2026-06-30 「進捗わからない」)。
              下部の進捗 panel が summary table の下にあって視認できないため、message
              エリアにも mini progress bar を出して即座に分かるように。 -->
-        <div v-if="r2SyncLoading && counts.total > 0" class="text-xs text-purple-900">
+        <div v-if="jobLoading && counts.total > 0" class="text-xs text-purple-900">
           <div class="mb-1">
             進捗: <strong>{{ counts.done }} / {{ counts.total }}</strong>
             ({{ progress }} %) —
@@ -1338,17 +1108,6 @@ async function runR2SyncFromYear2026() {
           </div>
         </div>
       </div>
-      <div v-if="r2SyncResult" class="text-xs text-gray-700">
-        attempted={{ r2SyncResult.attempted }} uploaded={{ r2SyncResult.uploaded }}
-        acked={{ r2SyncResult.acked }} failures={{ r2SyncResult.failures.length }}
-        skipped={{ r2SyncResult.skipped.length }}
-        <ul v-if="r2SyncResult.skipped.length > 0" class="list-disc pl-5 mt-1 text-gray-600">
-          <li v-for="(s, i) in r2SyncResult.skipped" :key="i">
-            {{ s.month }} / office={{ s.eigyosho_id }} → {{ s.reason }}
-            (verified={{ s.verified_count }}/{{ s.expected_count }}, ng={{ s.verified_ng }})
-          </li>
-        </ul>
-      </div>
     </div>
 
     <div v-if="summaryMsg || summaryJobs.length > 0" class="bg-white rounded-lg shadow p-4">
@@ -1356,36 +1115,28 @@ async function runR2SyncFromYear2026() {
         <span>📊 recalc / R2 同期 状態サマリ (全期間・降順)</span>
         <div class="flex items-center gap-3">
           <button
-            :disabled="running || r2SyncLoading"
+            :disabled="running || jobLoading"
             class="text-xs text-red-700 border border-red-300 hover:bg-red-50 px-2 py-1 rounded font-normal disabled:opacity-50"
-            title="2026-01 から今日まで各月を順次 recalc (= CakePHP editable_months の制限を超えて全期間 recalc) → 完了後に R2 同期 (verify-first)"
-            @click="runRecalcAndSyncFromYear2026"
+            title="2026-01 から今日まで各月を順次 recalc (= CakePHP editable_months の制限を超えて全期間 recalc)"
+            @click="recalcAllMonths"
           >
-            {{ r2SyncLoading ? '実行中…' : '⚡ 2026-01〜今日 全期間 recalc + R2 同期' }}
+            {{ jobLoading ? '実行中…' : '⚡ 2026-01〜今日 全期間 recalc' }}
           </button>
           <button
-            :disabled="running || r2SyncLoading"
-            class="text-xs text-purple-700 border border-purple-300 hover:bg-purple-50 px-2 py-1 rounded font-normal disabled:opacity-50"
-            title="from を 2026-01-01 / to を今日に切り替えて、R2 同期 (verify-first) を実行 (recalc はしない)"
-            @click="runR2SyncFromYear2026"
-          >
-            {{ r2SyncLoading ? '実行中…' : '🚀 2026-01〜今日 R2 一括同期 (recalc なし)' }}
-          </button>
-          <button
-            :disabled="running || r2SyncLoading"
+            :disabled="running || jobLoading"
             class="text-xs text-orange-700 border border-orange-300 hover:bg-orange-50 px-2 py-1 rounded font-normal disabled:opacity-50"
-            title="UI 期間 (from/to) で blocker='unverified' な bucket を verify (R2 同期はしない)"
+            title="UI 期間 (from/to) で blocker='unverified' な bucket を verify"
             @click="runVerifyUnverifiedOnly"
           >
-            {{ r2SyncLoading ? '実行中…' : '🔍 未検証 bucket だけ verify' }}
+            {{ jobLoading ? '実行中…' : '🔍 未検証 bucket だけ verify' }}
           </button>
           <button
-            :disabled="running || r2SyncLoading"
+            :disabled="running || jobLoading"
             class="text-xs text-red-700 border border-red-300 hover:bg-red-50 px-2 py-1 rounded font-normal disabled:opacity-50"
             title="UI 期間 (from/to) の全 bucket (status != failed) を verify (= 過去 OK/NG も上書き)。計算式 (Rust SQL or compute_person_sum) を変更した時に使う。"
             @click="runForceVerifyAllBuckets"
           >
-            {{ r2SyncLoading ? '実行中…' : '🔁 全 bucket 強制 verify (UI 期間)' }}
+            {{ jobLoading ? '実行中…' : '🔁 全 bucket 強制 verify (UI 期間)' }}
           </button>
           <button
             :disabled="summaryLoading"
@@ -1398,7 +1149,7 @@ async function runR2SyncFromYear2026() {
           <NuxtLink
             to="/admin/recalc"
             class="text-xs text-blue-600 hover:underline font-normal"
-            title="recalc / R2 同期を実行 (= 状態サマリの状態を更新)"
+            title="recalc を実行 (= 状態サマリの状態を更新)"
           >
             /admin/recalc を開く →
           </NuxtLink>
@@ -1406,14 +1157,13 @@ async function runR2SyncFromYear2026() {
       </div>
       <div class="text-xs text-gray-600 mb-2">{{ summaryMsg }}</div>
 
-      <!-- r2SyncMsg をここでもミラー表示 (user 2026-06-30 「2026-01〜今日 R2 一括同期
-           が機能してない」: 実際は機能しているが上の方の panel で message が出るので
+      <!-- jobMsg をここでもミラー表示 (上の方の panel で message が出るので
            summary 内でボタン押した時に見えない問題への対処)。inline progress も同居。 -->
       <div
-        v-if="r2SyncMsg && r2SyncLoading"
+        v-if="jobMsg && jobLoading"
         class="text-sm whitespace-pre-wrap text-purple-800 bg-purple-50 border border-purple-200 rounded px-3 py-2 mb-2 space-y-2"
       >
-        <div>🚀 {{ r2SyncMsg }}</div>
+        <div>🚀 {{ jobMsg }}</div>
         <div v-if="counts.total > 0" class="text-xs text-purple-900">
           <div class="mb-1">
             進捗: <strong>{{ counts.done }} / {{ counts.total }}</strong>
@@ -1432,7 +1182,7 @@ async function runR2SyncFromYear2026() {
       <div v-if="summaryJobs.length === 0 && !summaryLoading && summaryMsg" class="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-3 py-2">
         対象期間に recalc_jobs が 1 件もありません → recalc が未実行です。
         <NuxtLink to="/admin/recalc" class="text-blue-600 hover:underline">/admin/recalc</NuxtLink>
-        の「再計算 → R2 同期」ボタンを実行してください (month 指定を空にすれば editable_months 全部 × 全営業所が処理されます)。
+        の「再計算」ボタンを実行してください (month 指定を空にすれば editable_months 全部 × 全営業所が処理されます)。
       </div>
       <table v-if="summaryJobs.length > 0" class="min-w-full text-xs">
         <thead class="bg-gray-50 border-b">
@@ -1457,23 +1207,13 @@ async function runR2SyncFromYear2026() {
             <td class="px-2 py-1 whitespace-nowrap">
               <button
                 v-if="canVerifyRow(j)"
-                :disabled="running || r2SyncLoading"
+                :disabled="running || jobLoading"
                 class="text-xs text-orange-700 border border-orange-300 hover:bg-orange-50 px-1.5 py-0.5 rounded mr-1 disabled:opacity-50"
                 :title="`${j.month} / office=${j.eigyosho_id} だけ verify (PHP vs Rust 突合)`"
                 @click="runVerifyForRow(j)"
               >
                 🔍 verify
               </button>
-              <button
-                v-if="canSyncRow(j)"
-                :disabled="running || r2SyncLoading"
-                class="text-xs text-purple-700 border border-purple-300 hover:bg-purple-50 px-1.5 py-0.5 rounded disabled:opacity-50"
-                :title="`${j.month} を R2 同期 (verify-first orchestrator)`"
-                @click="runR2SyncForRow(j)"
-              >
-                🚀 R2 同期
-              </button>
-              <span v-if="!canVerifyRow(j) && !canSyncRow(j)" class="text-gray-400">—</span>
             </td>
           </tr>
         </tbody>
