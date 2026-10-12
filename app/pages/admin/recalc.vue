@@ -2,8 +2,8 @@
 /**
  * 担当者別売上 再計算・検証 管理ページ (Refs ohishi-exp/rust-ichibanboshi#37, #38, #41)。
  *
- * 「再計算 → R2 同期」を 1 クリックで chain 実行。各行に日次 drill-down と
- * 削除ボタン、page 底に SQLite 全リセットボタン。
+ * 「再計算」を 1 クリックで実行 (R2 への raw 書き出しは売上 Worker が recalc のたびに行う)。
+ * 各行に日次 drill-down と削除ボタン、page 底に SQLite 全リセットボタン。
  *
  * 月次集計は rust 側で日次の VIEW に降格済 (#38)、UI も日次が SoT として表示する。
  *
@@ -35,13 +35,6 @@ interface RecalcResponse {
   jobs: RecalcJob[]
 }
 
-interface SyncResult {
-  attempted: number
-  uploaded: number
-  acked: number
-  failures: Array<{ month: string; eigyosho_id: number; stage: string; error: string }>
-}
-
 interface DailyRow {
   unko_date: string
   month: string
@@ -61,7 +54,7 @@ interface DailyResponse {
   rows: DailyRow[]
 }
 
-type Phase = 'idle' | 'recalc' | 'sync' | 'done' | 'error'
+type Phase = 'idle' | 'recalc' | 'done' | 'error'
 
 /**
  * ofetch が投げる error の data を文字列化する。
@@ -85,10 +78,6 @@ const eigyoshoId = ref('')
 const phase = ref<Phase>('idle')
 const error = ref('')
 const result = ref<RecalcResponse | null>(null)
-const syncResult = ref<SyncResult | null>(null)
-
-const syncOnlyLoading = ref(false)
-const syncOnlyError = ref('')
 
 // 日次 drill-down 用 state — bucket key = `${month}/${eigyosho_id}/${cal}`
 const dailyOpen = ref<Record<string, boolean>>({})
@@ -106,16 +95,14 @@ const rankingData = ref<Record<string, number>>({})
 const rankingLoading = ref(false)
 const rankingMonthLabel = computed(() => result.value?.months.join(', ') ?? '')
 
-const busy = computed(() => phase.value === 'recalc' || phase.value === 'sync')
+const busy = computed(() => phase.value === 'recalc')
 
 function phaseLabel(p: Phase): string {
   switch (p) {
     case 'idle':
       return '待機中'
     case 'recalc':
-      return '① 再計算中 (rust-ichiban → SQL Server → SQLite + raw NDJSON.gz)…'
-    case 'sync':
-      return '② R2 同期中 (pending → /raw → R2.put → ack)…'
+      return '再計算中 (売上 Worker → SQL Server → 集計 + raw NDJSON.gz を R2 へ)…'
     case 'done':
       return '✅ 完了'
     case 'error':
@@ -123,10 +110,9 @@ function phaseLabel(p: Phase): string {
   }
 }
 
-async function runRecalcAndSync() {
+async function runRecalc() {
   error.value = ''
   result.value = null
-  syncResult.value = null
   dailyOpen.value = {}
   dailyData.value = {}
   rankingData.value = {}
@@ -146,9 +132,6 @@ async function runRecalcAndSync() {
       return
     }
 
-    phase.value = 'sync'
-    const s = await $fetch<SyncResult>('/api/uriage/r2-sync', { method: 'POST' })
-    syncResult.value = s
     phase.value = 'done'
     // 完了後、担当者ランキング chart 用に全 computed bucket の daily を非同期 fetch
     // (失敗しても recalc 全体は成功扱い、グラフは部分集計でも表示)
@@ -191,21 +174,6 @@ async function loadRanking() {
     rankingData.value = totals
   } finally {
     rankingLoading.value = false
-  }
-}
-
-async function runR2SyncOnly() {
-  syncOnlyLoading.value = true
-  syncOnlyError.value = ''
-  syncResult.value = null
-  try {
-    const res = await $fetch<SyncResult>('/api/uriage/r2-sync', { method: 'POST' })
-    syncResult.value = res
-  } catch (e: unknown) {
-    const err = e as { statusCode?: number; statusMessage?: string; data?: unknown }
-    syncOnlyError.value = `エラー: ${err.statusCode ?? '?'} ${err.statusMessage ?? String(e)} ${fmtErrData(err.data)}`
-  } finally {
-    syncOnlyLoading.value = false
   }
 }
 
@@ -282,7 +250,6 @@ async function rebuildAll() {
     rebuildMsg.value = `✅ 再作成完了: ${res.rebuilt_at} — recalc を叩き直してください`
     // UI 反映: 表とキャッシュをクリア
     result.value = null
-    syncResult.value = null
     dailyOpen.value = {}
     dailyData.value = {}
     rankingData.value = {}
@@ -313,8 +280,8 @@ function fmtYen(n: number): string {
     <main class="max-w-7xl mx-auto px-4 py-6">
       <div class="bg-white rounded-lg shadow p-4 mb-4 space-y-3">
         <div class="text-sm text-gray-600">
-          rust-ichiban (<code>/api/uriage/recalc</code>) を叩いて担当者別売上を
-          SQLite に再集計し、raw NDJSON.gz を生成 → 続けて R2 に同期します。
+          売上 Worker (<code>/api/uriage/recalc</code>) を叩いて担当者別売上を
+          SQLite に再集計し、raw NDJSON.gz を生成して R2 に書き出します。
           <strong>month/eigyosho_id 未指定</strong> なら CakePHP の
           <code>editable_months</code> 全部 × 全営業所を処理します。
         </div>
@@ -338,9 +305,9 @@ function fmtYen(n: number): string {
           <button
             :disabled="busy"
             class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:bg-gray-400"
-            @click="runRecalcAndSync"
+            @click="runRecalc"
           >
-            {{ busy ? '実行中...' : '再計算 → R2 同期' }}
+            {{ busy ? '実行中...' : '再計算' }}
           </button>
         </div>
 
@@ -482,46 +449,6 @@ function fmtYen(n: number): string {
         </table>
       </div>
 
-      <div v-if="syncResult" class="bg-white rounded-lg shadow p-4 mt-4">
-        <div class="font-semibold text-base mb-2">② R2 同期結果</div>
-        <div class="text-sm">
-          <div>
-            attempted: <strong>{{ syncResult.attempted }}</strong> /
-            uploaded: <strong class="text-green-700">{{ syncResult.uploaded }}</strong> /
-            acked: <strong class="text-green-700">{{ syncResult.acked }}</strong>
-          </div>
-          <div v-if="syncResult.failures.length" class="mt-2">
-            <div class="font-semibold text-red-700">失敗:</div>
-            <ul class="list-disc pl-5 text-red-700 text-xs">
-              <li v-for="(f, i) in syncResult.failures" :key="i">
-                {{ f.month }} / eigyosho={{ f.eigyosho_id }} / stage={{ f.stage }}: {{ f.error }}
-              </li>
-            </ul>
-          </div>
-          <div v-else class="text-gray-600 text-xs mt-1">
-            (全件 OK)
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-lg shadow p-4 mt-6 space-y-3">
-        <div class="text-sm text-gray-600">
-          <strong>R2 同期 (単独)</strong> — 再計算なしで R2 同期だけ叩く時に使う fallback。
-          通常は上の「再計算 → R2 同期」ボタンで両方を一度に実行できる。cron は
-          月〜土 19:00 JST に safety net として 1 日 1 回動く。
-        </div>
-        <button
-          :disabled="syncOnlyLoading"
-          class="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 disabled:bg-gray-400"
-          @click="runR2SyncOnly"
-        >
-          {{ syncOnlyLoading ? '同期中...' : 'R2 同期のみ' }}
-        </button>
-        <div v-if="syncOnlyError" class="text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2 text-sm whitespace-pre-wrap">
-          {{ syncOnlyError }}
-        </div>
-      </div>
-
       <div class="mt-6">
         <div class="bg-white rounded-lg shadow p-4 mb-3">
           <div class="font-semibold text-base">🔍 PHP vs Rust 検証</div>
@@ -538,7 +465,7 @@ function fmtYen(n: number): string {
           <strong class="text-red-700">⚠️ 危険: SQLite 全リセット</strong> —
           全 uriage table/view を DROP → 再 migrate します。集計データは全て消えます。
           schema 不整合や fingerprint の全更新が必要な時の最終手段。raw NDJSON.gz は
-          残るので R2 同期は次回 recalc で復活します。
+          残るので R2 は次回 recalc で復活します。
         </div>
         <button
           :disabled="rebuildLoading"
