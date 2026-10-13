@@ -292,7 +292,7 @@ const effectiveMonthlyYMax = computed<number | undefined>(() => monthlyYMaxLock.
           <div v-if="personMonthlyError" class="bg-white rounded-lg shadow p-4 mb-2 text-sm text-red-700">
             担当者順位推移 endpoint エラー: {{ personMonthlyError }}
             <div class="text-xs text-gray-500 mt-1">
-              rust-ichiban への接続もしくは認証 (CF Access Service Token) を確認
+              売上 Worker への接続もしくは認証を確認
             </div>
           </div>
           <UriagePersonBumpChart
