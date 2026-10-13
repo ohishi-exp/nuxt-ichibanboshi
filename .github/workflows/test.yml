@@ -30,8 +30,8 @@ jobs:
       # release-wave 非参加なので flip 機構が無い。tag release を即 100% deploy
       # にする (default true = no-traffic upload だと prod traffic が切り替わらない)
       release_no_traffic: false
-      # CF Access client_secret を CF Secrets Store binding 化したため frontend-ci 内蔵の
-      # secret-verify が必須化する。GCP cloudsql-sv の CF_ACCESS_CLIENT_SECRET を検証する。
+      # Secrets Store binding (URIAGE_WRITE_TOKEN) を持つため frontend-ci 内蔵の
+      # secret-verify が必須。GCP cloudsql-sv を検証する。
       gcp_secret_verify_project: cloudsql-sv
       gcp_secret_verify_provider: ${{ vars.GCP_WIF_PROVIDER }}
       gcp_secret_verify_sa: ${{ vars.GCP_WIF_SERVICE_ACCOUNT_STAGING }}

@@ -14,20 +14,8 @@ pattern = "ichibanboshi.ippoan.org"
 custom_domain = true
 
 [vars]
-NUXT_SALES_API_BASE = "https://rust-ichiban.mtamaramu.com"
 NUXT_PUBLIC_ALC_API_BASE = "https://alc-api.ippoan.org"
 NUXT_PUBLIC_AUTH_WORKER_URL = "https://auth.ippoan.org"
-# 一番星 (rust-ichiban) 向け CF Access service token を `rust-ichibanboshi-ci-deploy`
-# (824a8b3c) に統一 (seikyu / nuxt-ichibanboshi 共通)。client_id は公開識別子なので var。
-NUXT_CF_ACCESS_CLIENT_ID = "824a8b3c7042c7040924f38797a832f7.access"
-
-# CF Access client_secret は wrangler secret をやめ、CF Secrets Store binding に移行
-# (824a8b3c のペア。GCP cloudsql-sv の CF_ACCESS_CLIENT_SECRET を SoT に sync 済)。
-# salesApi.ts が event.context.cloudflare.env.CF_ACCESS_CLIENT_SECRET.get() で読む。
-[[secrets_store_secrets]]
-binding = "CF_ACCESS_CLIENT_SECRET"
-store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
-secret_name = "CF_ACCESS_CLIENT_SECRET"
 
 # 売上 Worker (Service Binding 専用・公開の入口なし)。server/api/uriage の全口をここへ向ける。
 # 書き込み系 (recalc・verify・admin) は Secrets Store の URIAGE_WRITE_TOKEN を
@@ -42,7 +30,7 @@ store_id = "bd7bc91a3e5f4111add4acf6cb4b8733"
 secret_name = "URIAGE_WRITE_TOKEN"
 
 # 一番星 Worker (Service Binding 専用・認可なし)。一番星の 15 本 (employees・departments・sales 9・unchin 4)
-# をここから取る (Refs ohishi-exp/rust-ichibanboshi#322)。他の口と cron は従来どおりオンプレ。
+# をここから取る (Refs ohishi-exp/rust-ichibanboshi#322)。
 [[services]]
 binding = "ICHIBAN_DB"
 service = "ichibanboshi-ichiban"
